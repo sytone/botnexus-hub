@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="One clear view of your BotNexus worlds, conversations, and open questions.">
+  <title>BotNexusHub · Your worlds, together</title>
+  <script id="theme-init">
+    (function () {
+      var mode = 'system';
+      try {
+        var saved = window.localStorage.getItem('botnexushub.theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') mode = saved;
+      } catch (_) {}
+      var dark = false;
+      try { dark = Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (_) {}
+      if (mode !== 'system') document.documentElement.setAttribute('data-theme', mode);
+    }());
+  </script>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/theme.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to workspace</a>
+  <div id="hub-app">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="BotNexusHub home">
+        <span class="brand-mark" aria-hidden="true">B<span>H</span></span>
+        <span>BotNexus<span class="brand-hub">Hub</span><span class="brand-caption">YOUR WORLDS, TOGETHER</span></span>
+      </a>
+      <div class="header-actions">
+        <span id="hub-version" class="muted small" aria-label="Hub version"></span>
+        <button id="theme-toggle" class="button button-quiet theme-button" type="button" aria-label="Theme: system. Switch to light.">
+          <span data-theme-icon aria-hidden="true">◐</span><span data-theme-label>System</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content" class="main" tabindex="-1">
+      <p id="session-status" class="session-status" role="status">Checking secure access…</p>
+      <section id="access-panel" class="auth-card panel" aria-labelledby="access-title" hidden>
+        <span class="eyebrow">SECURE ACCESS</span>
+        <h1 id="access-title">Secure access<br>needs attention.</h1>
+        <p id="access-message" class="muted auth-description" role="alert"></p>
+        <button id="secure-access-button" class="button button-primary button-full" type="button">Reload secure access <span aria-hidden="true">→</span></button>
+        <p class="auth-footnote"><span aria-hidden="true">◇</span> Access is managed by your external sign-in service. Reloading never retries your last action.</p>
+      </section>
+
+      <section id="dashboard" aria-labelledby="dashboard-title" hidden>
+        <div class="hero">
+          <div>
+            <span class="eyebrow">YOUR WORKSPACE</span>
+            <h1 id="dashboard-title">Everything in view.</h1>
+            <p class="muted hero-description">A little less switching. A lot more clarity.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="add-world-button" class="button button-secondary" type="button"><span aria-hidden="true">＋</span> Add world</button>
+            <button id="new-conversation-button" class="button button-primary" type="button" disabled><span aria-hidden="true">＋</span> New conversation</button>
+          </div>
+        </div>
+
+        <div id="dashboard-error" class="notice notice-warning" role="alert" hidden></div>
+
+        <section class="stats" aria-label="Overview across all worlds">
+          <div class="stat"><span class="stat-label">Worlds online <span class="stat-symbol positive-text" aria-hidden="true">◉</span></span><strong id="stat-online">—</strong><span id="stat-worlds-detail" class="stat-detail">Waiting for worlds</span></div>
+          <div class="stat"><span class="stat-label">Agents <span class="stat-symbol" aria-hidden="true">◇</span></span><strong id="stat-agents">—</strong><span class="stat-detail">Across all worlds</span></div>
+          <div class="stat"><span class="stat-label">Conversations <span class="stat-symbol" aria-hidden="true">≡</span></span><strong id="stat-conversations">—</strong><span class="stat-detail">Recent &amp; active</span></div>
+          <div class="stat"><span class="stat-label">Open questions <span class="stat-symbol warning-text" aria-hidden="true">?</span></span><strong id="stat-questions">—</strong><span class="stat-detail">Waiting for your input</span></div>
+        </section>
+
+        <div class="workspace-toolbar">
+          <div class="filter-control"><label for="world-filter">Show</label><select id="world-filter"><option value="">All worlds</option></select></div>
+          <div class="sync-control"><span id="sync-status" class="sync-status" role="status">Waiting for the first update</span><button id="refresh-button" class="button button-quiet button-small" type="button" aria-label="Refresh worlds and activity"><span aria-hidden="true">↻</span> Refresh</button></div>
+        </div>
+
+        <section class="worlds-section" aria-labelledby="worlds-title">
+          <div class="section-heading"><h2 id="worlds-title">Worlds <span id="world-count" class="count">0</span></h2><span class="section-note">Connected by your outbound connectors</span></div>
+          <div id="world-grid" class="world-grid"><p class="empty-state">Loading your worlds…</p></div>
+        </section>
+
+        <div class="workspace-grid">
+          <section class="panel work-panel" aria-label="Conversations and questions">
+            <div class="tabs" role="tablist" aria-label="Workspace views">
+              <button id="conversations-tab" class="tab" type="button" role="tab" aria-selected="true" aria-controls="conversations-panel" tabindex="0">Recent conversations <span id="conversation-count" class="count">0</span></button>
+              <button id="questions-tab" class="tab" type="button" role="tab" aria-selected="false" aria-controls="questions-panel" tabindex="-1">Open questions <span id="question-count" class="count">0</span></button>
+            </div>
+            <div id="conversations-panel" class="tab-panel" role="tabpanel" aria-labelledby="conversations-tab" tabindex="0">
+              <ul id="conversation-list" class="conversation-list"><li class="empty-state">Loading recent conversations…</li></ul>
+            </div>
+            <div id="questions-panel" class="tab-panel" role="tabpanel" aria-labelledby="questions-tab" tabindex="0" hidden>
+              <ul id="question-list" class="question-list"><li class="empty-state">Loading open questions…</li></ul>
+            </div>
+          </section>
+          <aside class="panel activity-panel" aria-labelledby="activity-title">
+            <div class="panel-heading"><div><h2 id="activity-title">Activity</h2><p id="activity-scope" class="muted small">Latest across all worlds</p></div><span class="activity-mark" aria-hidden="true">↗</span></div>
+            <ul id="activity-list" class="activity-list"><li class="empty-state">Loading activity…</li></ul>
+            <p class="panel-footnote">Just the highlights. Open a world for the full conversation.</p>
+          </aside>
+        </div>
+
+        <section id="commands-panel" class="panel receipts-panel" aria-labelledby="commands-title" hidden>
+          <div class="panel-heading"><div><h2 id="commands-title">Command receipts</h2><p class="muted small">Accepted means queued by the world, not finished by the agent. Failed or unknown actions are never retried automatically.</p></div></div>
+          <ul id="command-list" class="command-list"></ul>
+        </section>
+        <footer class="workspace-footer"><span><span class="status-dot" aria-hidden="true"></span> Outbound-only world connections</span><span>Refreshes every 5 seconds while this tab is visible</span></footer>
+      </section>
+      <noscript><div class="notice notice-warning">JavaScript is required to use BotNexusHub. Access is managed by your external sign-in service.</div></noscript>
+    </main>
+
+    <dialog id="conversation-dialog" class="dialog" aria-labelledby="conversation-dialog-title">
+      <form id="conversation-form" autocomplete="off">
+        <div class="dialog-heading"><div><span class="eyebrow">START SOMETHING</span><h2 id="conversation-dialog-title">New conversation</h2></div><button class="icon-button" type="button" data-close="conversation-dialog" aria-label="Close new conversation">×</button></div>
+        <div class="dialog-body">
+          <p class="muted">Choose a world and an agent. The world will queue your first message.</p>
+          <div class="form-grid"><div><label for="conversation-world">World</label><select id="conversation-world" name="worldId" required></select></div><div><label for="conversation-agent">Agent</label><select id="conversation-agent" name="agentId" required></select></div></div>
+          <label for="conversation-title">Title</label><input id="conversation-title" name="title" type="text" placeholder="What would you like to work on?" maxlength="200" required>
+          <label for="conversation-message">First message</label><textarea id="conversation-message" name="message" placeholder="Give your agent a little context…" rows="5" maxlength="10000" required></textarea>
+          <p id="conversation-error" class="notice notice-danger" role="alert" hidden></p>
+          <p class="field-help">Commands are sent once. Open the world to follow the agent’s work.</p>
+        </div>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" data-close="conversation-dialog">Cancel</button><button id="conversation-submit" class="button button-primary" type="submit">Start conversation <span aria-hidden="true">→</span></button></div>
+      </form>
+    </dialog>
+
+    <dialog id="world-dialog" class="dialog" aria-labelledby="world-dialog-title">
+      <div class="dialog-heading"><div><span class="eyebrow">BRING YOUR WORLDS TOGETHER</span><h2 id="world-dialog-title">Add a world</h2></div><button class="icon-button" type="button" data-close="world-dialog" aria-label="Close add world">×</button></div>
+      <form id="world-form" autocomplete="off">
+        <div class="dialog-body">
+          <p class="muted">Register a world, then install its outbound connector. Its secret token remains valid until rotated and is shown only once.</p>
+          <label for="world-id">World ID</label><input id="world-id" name="id" type="text" placeholder="home-lab" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}" maxlength="64" autocapitalize="off" spellcheck="false" required aria-describedby="world-id-help">
+          <p id="world-id-help" class="field-help">A unique, stable ID. Use letters, numbers, dots, underscores, or hyphens.</p>
+          <label for="world-name">Display name</label><input id="world-name" name="name" type="text" placeholder="Home lab" maxlength="120" required>
+          <label for="world-base-url">World portal URL</label><input id="world-base-url" name="baseUrl" type="url" placeholder="https://world.example.com" maxlength="2000" spellcheck="false" required aria-describedby="world-url-help">
+          <p id="world-url-help" class="field-help">Use the full http:// or https:// portal URL, including any path prefix. Do not include credentials.</p>
+          <p id="world-error" class="notice notice-danger" role="alert" hidden></p>
+        </div>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" data-close="world-dialog">Cancel</button><button id="world-submit" class="button button-primary" type="submit">Create connector token</button></div>
+      </form>
+      <section id="world-enrollment" hidden>
+        <div class="dialog-body">
+          <div class="notice notice-warning"><strong>Save this token now.</strong> It remains valid until rotated. It is shown only once and is cleared when you close this dialog. Keep it secret.</div>
+          <label for="connector-token">World connector token</label>
+          <div class="secret-row"><input id="connector-token" type="password" autocomplete="off" spellcheck="false" readonly><button id="reveal-connector-token" class="button button-secondary button-small" type="button" aria-controls="connector-token" aria-pressed="false">Show</button><button id="copy-connector-token" class="button button-secondary button-small" type="button">Copy</button></div>
+          <h3 class="snippet-heading">Connector connection details</h3>
+          <p class="field-help">Use these values in your connector setup. The world connects outbound to the connector address, separate from secure operator access.</p>
+          <pre id="connector-snippet" class="code-snippet" tabindex="0" aria-label="Connector connection details"></pre>
+          <button id="copy-connector-snippet" class="button button-secondary button-small" type="button">Copy connection details with token</button>
+          <h3 class="snippet-heading">Authorization header</h3>
+          <pre id="connector-header-snippet" class="code-snippet" tabindex="0" aria-label="Connector authorization header"></pre>
+          <p id="enrollment-feedback" class="field-help" role="status"></p>
+          <p class="field-help">This secret authorizes only this world’s connector. Store it in a protected file on the world.</p>
+        </div>
+        <div class="dialog-actions"><button id="enrollment-done" class="button button-primary" type="button" data-close="world-dialog">Done — I’ve saved the token</button></div>
+      </section>
+    </dialog>
+    <p id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../VERSION').Trim())</Version>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>BotNexus.Extensions.HubConnector</RootNamespace>
+    <Description>Outbound, metadata-only BotNexusHub world connector.</Description>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PathMap>$(MSBuildProjectDirectory)=/_/src/HubConnector</PathMap>
+    <BotNexusRepoRoot Condition="'$(BotNexusRepoRoot)' == ''">$(BOTNEXUS_REPO_ROOT)</BotNexusRepoRoot>
+    <BotNexusBinaryDir Condition="'$(BotNexusBinaryDir)' == ''">$(BOTNEXUS_BINARY_DIR)</BotNexusBinaryDir>
+    <BotNexusReferenceShape Condition="'$(BotNexusReferenceShape)' == '' and '$(BotNexusBinaryDir)' != ''">binary</BotNexusReferenceShape>
+    <BotNexusReferenceShape Condition="'$(BotNexusReferenceShape)' == ''">source</BotNexusReferenceShape>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="Connector.Tests" />
+    <None Update="botnexus-extension.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BotNexusReferenceShape)' == 'source'">
+    <ProjectReference Include="$(BotNexusRepoRoot)/src/domain/BotNexus.Domain/BotNexus.Domain.csproj" />
+    <ProjectReference Include="$(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Contracts/BotNexus.Gateway.Contracts.csproj" />
+    <ProjectReference Include="$(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Dispatching/BotNexus.Gateway.Dispatching.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BotNexusReferenceShape)' == 'binary'">
+    <_BotNexusContract Include="BotNexus.Domain.Wire;BotNexus.Domain;BotNexus.Gateway.Contracts;BotNexus.Gateway.Dispatching;Vogen.SharedTypes" />
+    <Reference Include="@(_BotNexusContract)">
+      <HintPath>$(BotNexusBinaryDir)/%(Identity).dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateBotNexusReferences" BeforeTargets="CollectPackageReferences;ResolveProjectReferences;ResolveAssemblyReferences">
+    <Error Condition="'$(BotNexusReferenceShape)' != 'source' and '$(BotNexusReferenceShape)' != 'binary'" Text="BotNexusReferenceShape must be source or binary." />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'source' and '$(BotNexusRepoRoot)' == ''" Text="BotNexusRepoRoot is required for source references. Pass -p:BotNexusRepoRoot=/isolated/botnexus or set BOTNEXUS_REPO_ROOT." />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'source' and !Exists('$(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Dispatching/BotNexus.Gateway.Dispatching.csproj')" Text="Missing BotNexus project: $(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Dispatching/BotNexus.Gateway.Dispatching.csproj" />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'source' and !Exists('$(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Contracts/BotNexus.Gateway.Contracts.csproj')" Text="Missing BotNexus project: $(BotNexusRepoRoot)/src/gateway/BotNexus.Gateway.Contracts/BotNexus.Gateway.Contracts.csproj" />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'source' and !Exists('$(BotNexusRepoRoot)/src/domain/BotNexus.Domain/BotNexus.Domain.csproj')" Text="Missing BotNexus project: $(BotNexusRepoRoot)/src/domain/BotNexus.Domain/BotNexus.Domain.csproj" />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'binary' and '$(BotNexusBinaryDir)' == ''" Text="BotNexusBinaryDir is required for binary references. Pass -p:BotNexusBinaryDir=/matching/sdk." />
+    <Error Condition="'$(BotNexusReferenceShape)' == 'binary' and !Exists('$(BotNexusBinaryDir)/%(_BotNexusContract.Identity).dll')" Text="Missing BotNexus contract: $(BotNexusBinaryDir)/%(_BotNexusContract.Identity).dll" />
+  </Target>
+</Project>

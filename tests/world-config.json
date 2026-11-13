@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "gateway": {
+    "listenUrl": "http://+:5000",
+    "defaultAgentId": "helper",
+    "world": { "id": "botnexushub-test", "name": "Hub Test World", "description": "Disposable synthetic test world" },
+    "agentsDirectory": "/world/data/agents",
+    "sessionStore": { "type": "Sqlite", "connectionString": "Data Source=/world/data/sessions.sqlite" },
+    "extensionLoader": { "enabled": true, "path": "/app/extensions" },
+    "autoUpdate": { "enabled": false },
+    "auxiliary": { "titling": { "enabled": false } },
+    "crossWorld": { "inbound": { "enabled": false } }
+  },
+  "cron": { "enabled": false, "jobs": {} },
+  "providers": {
+    "fixture": {
+      "enabled": true,
+      "apiKey": "synthetic-not-a-secret",
+      "baseUrl": "http://mock-provider:8080/v1",
+      "chat": { "api": "openai-compat", "defaultModel": "e2e", "models": ["e2e"], "input": ["text"], "reasoning": false, "contextWindow": 32768 }
+    },
+    "github-copilot": { "enabled": false },
+    "openai": { "enabled": false },
+    "anthropic": { "enabled": false }
+  },
+  "agents": {
+    "helper": {
+      "enabled": true,
+      "displayName": "Test Helper",
+      "description": "Synthetic deterministic Hub test agent; no external credentials or tools",
+      "provider": "fixture", "model": "e2e", "isolationStrategy": "in-process",
+      "toolIds": ["ask_user"],
+      "systemPrompt": "You are a synthetic test helper. The local fixture provider determines your replies. Never access external services.",
+      "memory": { "enabled": false }, "soul": { "enabled": false }, "heartbeat": { "enabled": false }
+    }
+  }
+}

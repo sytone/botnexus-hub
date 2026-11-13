@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>Connector.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../../src/BotNexus.Extensions.HubConnector/BotNexus.Extensions.HubConnector.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(BotNexusBinaryDir)' != '' or '$(BOTNEXUS_BINARY_DIR)' != ''">
+    <Reference Include="BotNexus.Domain.Wire"><HintPath>$(BotNexusBinaryDir)/BotNexus.Domain.Wire.dll</HintPath></Reference>
+    <Reference Include="BotNexus.Domain"><HintPath>$(BotNexusBinaryDir)/BotNexus.Domain.dll</HintPath></Reference>
+    <Reference Include="BotNexus.Gateway.Contracts"><HintPath>$(BotNexusBinaryDir)/BotNexus.Gateway.Contracts.dll</HintPath></Reference>
+    <Reference Include="BotNexus.Gateway.Dispatching"><HintPath>$(BotNexusBinaryDir)/BotNexus.Gateway.Dispatching.dll</HintPath></Reference>
+    <Reference Include="Vogen.SharedTypes"><HintPath>$(BotNexusBinaryDir)/Vogen.SharedTypes.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

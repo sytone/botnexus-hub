@@ -1,0 +1,11 @@
+{
+  "id": "botnexus-hub-connector",
+  "name": "BotNexusHub World Connector",
+  "description": "Outbound metadata snapshots and three restricted Hub commands.",
+  "version": "0.2.0",
+  "entryAssembly": "BotNexus.Extensions.HubConnector.dll",
+  "extensionTypes": ["channel"],
+  "configurationScopes": ["gateway"],
+  "enabled": true,
+  "configSchema": []
+}

@@ -1,0 +1,190 @@
+name: botnexushub
+services:
+  hub:
+    build:
+      context: .
+      args:
+        HUB_COMMIT: ${HUB_COMMIT:-unknown}
+    image: localhost/botnexushub:0.2.0
+    container_name: botnexushub
+    init: true
+    restart: unless-stopped
+    environment:
+      HUB_DB_PATH: /data/hub.sqlite
+      HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:?Set the externally preauthenticated operator origin}
+      HUB_CONNECTOR_PUBLIC_URL: ${HUB_CONNECTOR_PUBLIC_URL:?Set the separate connector origin}
+    ports:
+      - "127.0.0.1:${HUB_HOST_PORT:-8785}:8080"
+      - "127.0.0.1:${HUB_CONNECTOR_HOST_PORT:-8788}:8081"
+    volumes:
+      - hub-data:/data
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [hub-net, test-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8785/health',timeout=3)"]
+      interval: 15s
+      timeout: 4s
+      start_period: 15s
+      retries: 3
+  ingress:
+    image: docker.io/library/nginx:1.28-alpine
+    container_name: botnexushub-ingress
+    user: "101:101"
+    init: true
+    restart: unless-stopped
+    network_mode: service:hub
+    depends_on: [hub]
+    entrypoint: ["/bin/sh", "/etc/hub/start.sh"]
+    environment:
+      HUB_PROXY_SECRET: ${HUB_PROXY_SECRET:?Run scripts/configure.py}
+    volumes:
+      - ./ingress/nginx.conf.template:/etc/hub/nginx.conf.template:ro
+      - ./ingress/start.sh:/etc/hub/start.sh:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+  netbird:
+    profiles: [netbird]
+    image: docker.io/netbirdio/netbird:0.78.1
+    container_name: botnexushub-netbird
+    restart: unless-stopped
+    network_mode: service:hub
+    depends_on: [hub]
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_RAW, SYS_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    volumes:
+      - netbird-state:/var/lib/netbird
+    environment:
+      NB_SETUP_KEY: ${NB_SETUP_KEY:-}
+      NB_HOSTNAME: botnexushub
+      NB_MANAGEMENT_URL: ${NB_MANAGEMENT_URL:-}
+    entrypoint: ["/bin/sh", "/hub-netbird.sh"]
+    configs:
+      - source: netbird-start
+        target: /hub-netbird.sh
+    healthcheck:
+      disable: true
+  mock-provider:
+    profiles: [test]
+    image: docker.io/library/python:3.12-slim-bookworm
+    container_name: botnexushub-mock-provider
+    init: true
+    restart: unless-stopped
+    command: ["python", "/fixture/mock_provider.py"]
+    volumes:
+      - ./tests/mock_provider.py:/fixture/mock_provider.py:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [test-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+  world-a:
+    profiles: [test]
+    image: localhost/botnexushub-test-world:0.2.0
+    build:
+      context: .
+      dockerfile: tests/connected-world.Dockerfile
+    container_name: botnexushub-world-a
+    init: true
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/seed/entrypoint.sh"]
+    environment:
+      HUB_URL: ${TEST_HUB_URL:-ws://hub:8081}
+      HUB_WORLD_ID: test-a
+      HUB_WORLD_NAME: Workshop Alpha
+      HUB_WORLD_BASE_URL: http://localhost:8786
+      HUB_WORLD_TOKEN: ${TEST_WORLD_A_TOKEN:-}
+      HUB_ALLOWED_AGENTS: helper
+      HUB_ALLOW_INSECURE: "true"
+      HUB_SNAPSHOT_INTERVAL_SECONDS: "3"
+    volumes:
+      - world-a-state:/world
+      - ./tests/world-a.json:/seed/config.json:ro
+      - ./tests/world-entrypoint.sh:/seed/entrypoint.sh:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [ingress, mock-provider]
+    networks: [test-net]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--max-time", "3", "http://127.0.0.1:5000/health"]
+      interval: 15s
+      timeout: 4s
+      start_period: 30s
+      retries: 4
+  world-b:
+    profiles: [test]
+    image: localhost/botnexushub-test-world:0.2.0
+    container_name: botnexushub-world-b
+    init: true
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/seed/entrypoint.sh"]
+    environment:
+      HUB_URL: ${TEST_HUB_URL:-ws://hub:8081}
+      HUB_WORLD_ID: test-b
+      HUB_WORLD_NAME: Workshop Beta
+      HUB_WORLD_BASE_URL: http://localhost:8787
+      HUB_WORLD_TOKEN: ${TEST_WORLD_B_TOKEN:-}
+      HUB_ALLOWED_AGENTS: helper
+      HUB_ALLOW_INSECURE: "true"
+      HUB_SNAPSHOT_INTERVAL_SECONDS: "3"
+    volumes:
+      - world-b-state:/world
+      - ./tests/world-b.json:/seed/config.json:ro
+      - ./tests/world-entrypoint.sh:/seed/entrypoint.sh:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [ingress, mock-provider]
+    networks: [test-net]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--max-time", "3", "http://127.0.0.1:5000/health"]
+      interval: 15s
+      timeout: 4s
+      start_period: 30s
+      retries: 4
+
+  test-portals:
+    profiles: [test]
+    image: docker.io/library/nginx:1.28-alpine
+    container_name: botnexushub-test-portals
+    user: "101:101"
+    init: true
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/portal-start.sh"]
+    ports: ["127.0.0.1:8786:8786", "127.0.0.1:8787:8787"]
+    volumes:
+      - ./tests/portals.conf:/etc/nginx/nginx.template:ro
+      - ./tests/portal-start.sh:/portal-start.sh:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [world-a, world-b]
+    networks: [hub-net, test-net]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8786/health"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+
+networks:
+  test-net:
+    internal: true
+  hub-net:
+    name: botnexushub-net
+volumes:
+  world-a-state:
+  world-b-state:
+  hub-data:
+  netbird-state:
+configs:
+  netbird-start:
+    file: ./scripts/netbird.sh
