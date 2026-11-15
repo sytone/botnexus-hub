@@ -28,17 +28,29 @@ Save the token directly into a protected file readable by the gateway service ac
 
 ## 2. Register and sync the public source
 
-Run these commands yourself on the target BotNexus host, using its normal BotNexus home. **Replace `<reviewed-hub-commit>` before running.** It is the reviewed commit in the Hub repository, not the platform commit above.
+Run these commands yourself on the target BotNexus host, using its normal service account and BotNexus home. Replace `<world-home>` with the existing **home directory**, not a JSON/database filename; quote paths containing spaces.
+
+For **latest source**, use `main`:
 
 ```text
-botnexus extensions add --id botnexushub --url https://github.com/sytone/botnexus-hub.git --ref <reviewed-hub-commit>
-botnexus extensions list
-botnexus extensions sync
+botnexus --target <world-home> extensions add --id botnexushub --url https://github.com/sytone/botnexus-hub.git --ref main
+botnexus --target <world-home> extensions list
+botnexus --target <world-home> extensions sync
 ```
 
-Use a pinned commit for reproducible installation. The public Git URL is a source reference, not a Hub service address. No private Git host, local repository path or credential-bearing URL is required.
+For an existing registration, including an older commit pin, update it instead of adding a duplicate:
 
-`add` saves registration metadata only. `sync` fetches/resolves the pinned source, discovers projects beside a manifest, builds them in Release and deploys their outputs. It processes **all enabled repository registrations**, so review those before syncing. Check the exit status and persisted lifecycle result/resolved commit. A copied directory or resolved SHA alone does not prove a successful build/deployment. Sync does not hot-load the running gateway.
+```text
+botnexus --target <world-home> extensions update --id botnexushub --ref main --updates
+botnexus --target <world-home> extensions list
+botnexus --target <world-home> extensions sync
+```
+
+For a **tagged release**, replace `main` in `add` or `update` with the exact published tag from the [tags page](https://github.com/sytone/botnexus-hub/tags). No release tags exist yet; version `0.2.0` alone is not a Git tag. A reviewed commit is also accepted when you need a fixed source revision. The Hub ref is separate from the pinned platform compatibility reference above.
+
+The public Git URL is a source reference, not a Hub service address. No private Git host, local repository path or credential-bearing URL is required.
+
+`add` saves registration metadata only; `update` changes it. `sync` fetches/resolves the selected ref, discovers projects beside a manifest, builds them in Release and deploys their outputs. It processes **all enabled repository registrations**, so review those before syncing. Review new source before each update and record the resolved commit: `main` can advance at later syncs or gateway startup. A copied directory or resolved SHA alone does not prove a successful build/deployment. Sync does not hot-load the running gateway.
 
 Keep these IDs separate:
 
@@ -51,7 +63,9 @@ Normal repository sync passes the matching BotNexus checkout as `BotNexusRepoRoo
 
 ## 3. Configure the connector
 
-Merge this object into the target world's configuration; do not replace unrelated settings. The exact scope is **`gateway.extensions.botnexus-hub-connector`**, not `gateway.extensions.defaults` or an agent's extensions bag. Loader settings, if needed, belong separately under `gateway.extensionLoader`.
+Use the supported `config get` / `config set` CLI, not direct JSON/database edits. The exact scope is **`gateway.extensions.botnexus-hub-connector`**, not `gateway.extensions.defaults` or an agent's extensions bag. Loader settings, if needed, belong separately under `gateway.extensionLoader`. The [README CLI walkthrough](../README.md#cli-add-or-replace-the-connector-configuration) gives copyable add/update commands, shell quoting, readback checks and replacement rules.
+
+The object below shows the configuration shape. For `config set`, pass only the inner connector object to that exact key; preserve the rest of the world's configuration.
 
 Use the separate **connector origin**, for example `https://connect.example.com`. Do not use `https://hub.example.com`: the operator listener blocks connector routes and its external sign-in is for browsers. `/api/me` exposes the configured connector root as `connectorUrl`, and the enrollment snippet uses that value.
 
@@ -126,7 +140,7 @@ For each setting, `BOTNEXUSHUB_...` takes precedence over `HUB_...`, then the ga
 After successful sync and configuration, **the world owner** chooses a maintenance window and checks that the target world's active work can be interrupted. Only then should the owner run:
 
 ```text
-botnexus gateway restart
+botnexus --target <world-home> gateway restart
 ```
 
 This is a user-operated installation step, never a Hub test/deployment action for an assistant to execute against the running host world. Gateway start/restart may reconcile enabled repositories again; a successful earlier sync is not an exemption from build/reference checks.

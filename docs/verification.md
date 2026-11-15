@@ -145,7 +145,8 @@ Pass `--hub-container`, `--ingress-container`, `--world-container`, `--world-b-b
 - [ ] Check the full candidate tree and relevant history for secrets, real deployment domains, private Git remotes, personal usernames, user-profile paths, internal addresses, proxy admin details and private infrastructure references. Documentation examples use `example.com` and public source URLs only.
 - [ ] Publish only reviewed source/docs/manifests/fixtures. Exclude DLLs, PDBs, gateway redistributions, `bin`/`obj`, artifacts, databases, `data`, real `.env` files, token files, screenshots and browser profiles.
 - [ ] Do not push or mirror private repository history into the public repository. Prepare a clean reviewed public history instead.
-- [ ] Confirm install examples use `https://github.com/sytone/botnexus-hub.git` and a reviewed pinned Hub ref, not a private mirror or an unreviewed moving branch.
+- [ ] Confirm install examples use `https://github.com/sytone/botnexus-hub.git` with `main` for latest source or an actual published tag for a release. Clearly mark tag placeholders, require source review and record the resolved commit; a reviewed commit may be used for a fixed revision. Do not invent a tag from `VERSION` or substitute a private mirror.
+- [ ] Verify CLI configuration examples against a disposable home: set/get only `gateway.extensions.botnexus-hub-connector`, preserve unrelated settings, explain whole-object replacement, and leave the running world untouched.
 - [ ] State the licensing status explicitly. This source publication does not grant an open-source license; only the maintainers may select one. Do not copy a dependency or gateway license onto this project.
 - [ ] Record actual gate results for this revision. Any failed, skipped or unrun required gate remains open; a documentation edit is not evidence that an application test passed.
 

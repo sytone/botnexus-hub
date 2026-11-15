@@ -95,7 +95,7 @@ This installs **only the `botnexus-hub-connector` extension** into a world you a
 - Have a running Hub with both [external routes](#access-architecture) configured. Note its operator URL (for browser sign-in) and its **connector URL** (for the extension). Example addresses here are placeholders, not hosted services.
 - On the target world's host, use its normal service account and BotNexus home. Have Git and the **.NET 10 SDK** available to the process that builds extensions. A world in a container needs these in its build environment, not just on the outer host.
 - Check `botnexus extensions --help`. Your installed BotNexus must support the out-of-tree `extensions add` and `extensions sync` lifecycle described in the [platform guide](https://github.com/sytone/botnexus/blob/04052bbe283ac9106277a841b8d4c60a5c3ce095/docs/extension-development.md#out-of-tree-extension-repositories). If it does not, stop and check compatibility; this guide is not an instruction to update the running platform.
-- Review the connector source, dependencies and pinned revision before installing. Extension builds can run MSBuild tasks, and loaded extensions have the gateway process's permissions. Registration is not a sandbox.
+- Review the connector source, dependencies and selected ref before installing or updating. Extension builds can run MSBuild tasks, and loaded extensions have the gateway process's permissions. Registration is not a sandbox.
 
 Sign in to your Hub's operator URL, choose **Add world**, and enter a stable world ID such as `workshop`, a display name, and the world's browser-reachable portal URL. Keep that ID for the configuration below.
 
@@ -103,23 +103,41 @@ Save the token shown by Hub directly into a private text file readable by the ga
 
 ### 2. Register and build the extension
 
-Run on the **existing world's host**, using the same BotNexus home as its gateway. If you normally select a home with `botnexus --target <world-home> ...`, keep that option on every command below. No separate clone of this repository is required.
+Run on the **existing world's host**, using the same service account and BotNexus home as its gateway. Replace `<world-home>` in every command with that existing **home directory**, not a JSON or database filename; quote paths containing spaces. No separate clone of this repository is required.
 
-The ref below pins the public 0.2.0 source. Review it before running:
+**Latest source (default):** use `--ref main`. Review the changes before each sync; `main` moves as changes are published.
 
 ```text
-botnexus extensions add --id botnexushub --url https://github.com/sytone/botnexus-hub.git --ref 26523cfdc2dcb03fdde57623f97c617ec923971c
-botnexus extensions list
-botnexus extensions sync
+botnexus --target <world-home> extensions add --id botnexushub --url https://github.com/sytone/botnexus-hub.git --ref main
+botnexus --target <world-home> extensions list
+botnexus --target <world-home> extensions sync
 ```
 
-`add` records the repository; `sync` fetches it, builds the extension in Release, and deploys the output. **Sync processes all enabled repository registrations**, so inspect the list first. Check for a successful lifecycle result and the expected resolved commit. Sync does not hot-load the running gateway. If this repository is already registered, do not add a duplicate; see the [platform update procedure](https://github.com/sytone/botnexus/blob/04052bbe283ac9106277a841b8d4c60a5c3ce095/docs/extension-development.md#cli-method).
+**Already registered, or updating an older commit pin to latest?** Use `update`, not another `add`:
+
+```text
+botnexus --target <world-home> extensions update --id botnexushub --ref main --updates
+botnexus --target <world-home> extensions list
+botnexus --target <world-home> extensions sync
+```
+
+**Tagged release (when available):** there are currently no release tags. The displayed app version `0.2.0` is not a Git tag. Once a tag is published on the [tags page](https://github.com/sytone/botnexus-hub/tags), replace `main` in the `add` or `update` command with that exact tag. For example, replace `<release-tag>` before running:
+
+```text
+botnexus --target <world-home> extensions update --id botnexushub --ref <release-tag> --updates
+botnexus --target <world-home> extensions list
+botnexus --target <world-home> extensions sync
+```
+
+`add` records the repository; `update` changes its registration; `sync` fetches the selected ref, builds the extension in Release, and deploys the output. **Sync processes all enabled repository registrations**, so inspect the list first. Check for a successful lifecycle result and record the resolved commit. Sync does not hot-load the running gateway. A later sync or gateway startup may resolve a newer `main`; choose a published tag or a reviewed commit if you need a fixed revision.
 
 The registration ID `botnexushub` is not the config key. The extension's manifest ID and config key are **`botnexus-hub-connector`**. A build/reference error must be resolved against a compatible gateway; do not mix DLLs from different builds or bypass validation.
 
 ### 3. Add the connector settings to that world
 
-Use the world's supported configuration editor to merge these settings into its existing configuration. **Do not replace the whole configuration**. The scope is `gateway.extensions.botnexus-hub-connector`, not `gateway.extensions.defaults` or an agent's extensions bag. If the installed editor/CLI does not support this path, stop and check that version's configuration support; do not edit the database or a stale JSON export as a workaround.
+Use the supported **`config get` / `config set` CLI**, which handles the world's active configuration backend. **Do not replace the whole configuration** or edit its JSON/database files. The scope is `gateway.extensions.botnexus-hub-connector`, not `gateway.extensions.defaults` or an agent's extensions bag.
+
+The configuration shape is shown below; the CLI value is only the inner connector object, not this whole document.
 
 ```json
 {
@@ -146,6 +164,27 @@ Replace these example values:
 - `worldTokenFile`: the private token file's absolute path **as seen by the gateway process**. The example is a Linux/container path. On Windows, use a service-readable path such as `C:/BotNexus/secrets/hub-world-token.txt` with a private ACL. In a container, mount only that token file read-only at the configured path; a host-only path is not visible inside it.
 - `allowedAgents`: actual enabled, visible, named-agent IDs from that world. The list is mandatory and case-sensitive; an empty list disables the connector and wildcards such as `*` are rejected.
 
+#### CLI: add or replace the connector configuration
+
+First check the installed command surface, then inspect this extension's current value in a private terminal. A previous inline `worldToken` may appear in `get` output; do not share that output or use shell tracing.
+
+```text
+botnexus config get --help
+botnexus config set --help
+botnexus --target <world-home> config get gateway.extensions.botnexus-hub-connector
+```
+
+Replace the example values in this **single-line** command before running it. The quoting below is for **PowerShell 7.3+ (standard native argument passing) or Bash**, not Windows PowerShell 5.1 or `cmd.exe`. On Windows, replace the Linux token-file path with your service-readable Windows path.
+
+```sh
+botnexus --target <world-home> config set gateway.extensions.botnexus-hub-connector '{"enabled":true,"url":"https://connect.example.com","worldId":"workshop","worldName":"Workshop","worldBaseUrl":"https://world.example.com","worldTokenFile":"/run/secrets/hub-world-token","allowedAgents":["helper"]}'
+botnexus --target <world-home> config get gateway.extensions.botnexus-hub-connector
+```
+
+The same `config set` command **creates or replaces only this extension's object**. It does not merge that object's fields. For an update, read the current object, include any optional settings you want to keep, change the needed values, and set the complete object again. Do not set the entire `gateway` or `gateway.extensions` object. Some CLI versions cannot write dotted fields inside an extension's JSON object, so use the whole extension object above rather than appending `.url` or `.allowedAgents` to the key.
+
+Check every command's exit status and compare the readback with your intended values before restarting. An unset extension may read as `null`. If the CLI reports an unsupported path or another configuration error, stop and check that version's support; do not edit the database or a stale JSON export as a workaround. See the platform's [config CLI reference](https://github.com/sytone/botnexus/blob/04052bbe283ac9106277a841b8d4c60a5c3ce095/docs/cli-reference.md#config-set).
+
 If you copied Hub's generated snippet, replace `worldToken` with `worldTokenFile`; do not keep both. Existing `BOTNEXUSHUB_...` or `HUB_...` settings in the gateway process environment override these values. See the [full settings and environment reference](docs/connector.md#environment-alternative-and-settings) if you already use them. A Hub checkout's `.env` is not automatically a world configuration file.
 
 ### 4. Owner-run restart and connection checks
@@ -153,7 +192,7 @@ If you copied Hub's generated snippet, replace `worldToken` with `worldTokenFile
 After sync succeeds and configuration is saved, **the world owner** checks active work and chooses a maintenance window. The owner then runs the normal restart for that world; for a CLI-managed gateway:
 
 ```text
-botnexus gateway restart
+botnexus --target <world-home> gateway restart
 ```
 
 Restart interrupts active work. This is a user-operated installation step, **not permission for an assistant, Hub deployment or test to restart the running host world**. Use the world's normal service/container lifecycle if it is not CLI-managed.
