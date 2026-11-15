@@ -1,6 +1,8 @@
 # BotNexusHub
 
-**Version 0.2.0** · [Source repository](https://github.com/sytone/botnexus-hub) · [Install a world connector](docs/connector.md)
+**Version 0.2.0** · [Source repository](https://github.com/sytone/botnexus-hub) · [Install into an existing world](#install-the-extension-into-an-existing-world)
+
+Already running BotNexus? Follow the [existing-world install steps](#install-the-extension-into-an-existing-world) below. Install the connector on each world; run the Hub separately.
 
 One view across your BotNexus worlds. The Hub is a separate Python/FastAPI app with SQLite storage. Each enrolled world runs a small .NET connector that opens an outbound WebSocket to the Hub. This is not a BotNexus core fork.
 
@@ -84,16 +86,89 @@ Every operator API mutation requires both `X-Hub-Request: 1` and an `Origin` mat
 
 For an existing installation, use the [upgrade procedure](docs/operations.md#upgrade-from-010). Do not reset enrollment or delete volumes to change authentication.
 
-## Connect a world
+## Install the extension into an existing world
 
-1. Enter Hub through your external sign-in service, choose **Add world**, and use a stable ID such as `workshop`.
-2. Save the connector token privately when it is shown. It is **shown once, but reusable** for reconnects until explicit rotation or revocation. It is not a one-time-use token.
-3. Follow the [connector guide](docs/connector.md) to register `https://github.com/sytone/botnexus-hub.git` at a reviewed pinned ref, sync it and configure `gateway.extensions.botnexus-hub-connector` with an explicit `allowedAgents` list.
-4. Use the **connector origin**, not the operator origin, for the extension's `url`. Hub supplies it as `connectorUrl` from `/api/me`.
-5. The world owner schedules and performs any gateway restart. Hub setup and tests must never restart the running host world.
-6. Check that the world is online with a current snapshot. Use **Open world** to verify its portal URL and normal world authentication. Test writes only in a world approved for that test.
+This installs **only the `botnexus-hub-connector` extension** into a world you already run. Do not initialize a new BotNexus home, replace the world's settings, rebuild BotNexus core, or run this repository's Hub/test stack on the world. The connector runs inside its gateway and opens an outbound connection; no inbound world port or gateway admin key is needed.
 
-Never mount a live world's configuration, state, credentials, workspace, tools or container socket into Hub or its tests. Hub needs no gateway admin key and opens no inbound port on a world.
+### 1. Check prerequisites and enroll the world
+
+- Have a running Hub with both [external routes](#access-architecture) configured. Note its operator URL (for browser sign-in) and its **connector URL** (for the extension). Example addresses here are placeholders, not hosted services.
+- On the target world's host, use its normal service account and BotNexus home. Have Git and the **.NET 10 SDK** available to the process that builds extensions. A world in a container needs these in its build environment, not just on the outer host.
+- Check `botnexus extensions --help`. Your installed BotNexus must support the out-of-tree `extensions add` and `extensions sync` lifecycle described in the [platform guide](https://github.com/sytone/botnexus/blob/04052bbe283ac9106277a841b8d4c60a5c3ce095/docs/extension-development.md#out-of-tree-extension-repositories). If it does not, stop and check compatibility; this guide is not an instruction to update the running platform.
+- Review the connector source, dependencies and pinned revision before installing. Extension builds can run MSBuild tasks, and loaded extensions have the gateway process's permissions. Registration is not a sandbox.
+
+Sign in to your Hub's operator URL, choose **Add world**, and enter a stable world ID such as `workshop`, a display name, and the world's browser-reachable portal URL. Keep that ID for the configuration below.
+
+Save the token shown by Hub directly into a private text file readable by the gateway service account. It is **shown once, but reusable** for reconnects until rotation or revocation. The file contains only the token, not JSON. Use owner-only permissions on Linux or a restricted ACL on Windows. Do not put the token in a shell command, Git, logs or chat. Do not use the Hub proxy shared secret.
+
+### 2. Register and build the extension
+
+Run on the **existing world's host**, using the same BotNexus home as its gateway. If you normally select a home with `botnexus --target <world-home> ...`, keep that option on every command below. No separate clone of this repository is required.
+
+The ref below pins the public 0.2.0 source. Review it before running:
+
+```text
+botnexus extensions add --id botnexushub --url https://github.com/sytone/botnexus-hub.git --ref 26523cfdc2dcb03fdde57623f97c617ec923971c
+botnexus extensions list
+botnexus extensions sync
+```
+
+`add` records the repository; `sync` fetches it, builds the extension in Release, and deploys the output. **Sync processes all enabled repository registrations**, so inspect the list first. Check for a successful lifecycle result and the expected resolved commit. Sync does not hot-load the running gateway. If this repository is already registered, do not add a duplicate; see the [platform update procedure](https://github.com/sytone/botnexus/blob/04052bbe283ac9106277a841b8d4c60a5c3ce095/docs/extension-development.md#cli-method).
+
+The registration ID `botnexushub` is not the config key. The extension's manifest ID and config key are **`botnexus-hub-connector`**. A build/reference error must be resolved against a compatible gateway; do not mix DLLs from different builds or bypass validation.
+
+### 3. Add the connector settings to that world
+
+Use the world's supported configuration editor to merge these settings into its existing configuration. **Do not replace the whole configuration**. The scope is `gateway.extensions.botnexus-hub-connector`, not `gateway.extensions.defaults` or an agent's extensions bag. If the installed editor/CLI does not support this path, stop and check that version's configuration support; do not edit the database or a stale JSON export as a workaround.
+
+```json
+{
+  "gateway": {
+    "extensions": {
+      "botnexus-hub-connector": {
+        "enabled": true,
+        "url": "https://connect.example.com",
+        "worldId": "workshop",
+        "worldName": "Workshop",
+        "worldBaseUrl": "https://world.example.com",
+        "worldTokenFile": "/run/secrets/hub-world-token",
+        "allowedAgents": ["helper"]
+      }
+    }
+  }
+}
+```
+
+Replace these example values:
+
+- `url`: your Hub's **connector origin**, not its operator/sign-in URL and not the full `/api/connect/...` endpoint. Hub exposes it as `connectorUrl` from `/api/me`. The connector turns HTTPS into WSS and appends the world endpoint. The route must preserve WebSocket upgrades and Authorization, without a browser login challenge.
+- `worldId`: exactly the ID enrolled in Hub. `worldName` is its display name; `worldBaseUrl` is the world's normal browser portal URL.
+- `worldTokenFile`: the private token file's absolute path **as seen by the gateway process**. The example is a Linux/container path. On Windows, use a service-readable path such as `C:/BotNexus/secrets/hub-world-token.txt` with a private ACL. In a container, mount only that token file read-only at the configured path; a host-only path is not visible inside it.
+- `allowedAgents`: actual enabled, visible, named-agent IDs from that world. The list is mandatory and case-sensitive; an empty list disables the connector and wildcards such as `*` are rejected.
+
+If you copied Hub's generated snippet, replace `worldToken` with `worldTokenFile`; do not keep both. Existing `BOTNEXUSHUB_...` or `HUB_...` settings in the gateway process environment override these values. See the [full settings and environment reference](docs/connector.md#environment-alternative-and-settings) if you already use them. A Hub checkout's `.env` is not automatically a world configuration file.
+
+### 4. Owner-run restart and connection checks
+
+After sync succeeds and configuration is saved, **the world owner** checks active work and chooses a maintenance window. The owner then runs the normal restart for that world; for a CLI-managed gateway:
+
+```text
+botnexus gateway restart
+```
+
+Restart interrupts active work. This is a user-operated installation step, **not permission for an assistant, Hub deployment or test to restart the running host world**. Use the world's normal service/container lifecycle if it is not CLI-managed.
+
+After restart:
+
+1. Check the world's extension view/logs for loaded ID `botnexus-hub-connector`. `extensions list` alone proves registration state, not a loaded service.
+2. In Hub, confirm the world is online and has a fresh snapshot with only the intended agents. The connector normally sends an initial snapshot and updates every 15 seconds.
+3. Choose **Open world** and check that it reaches the correct portal and its normal authentication. Test messages/questions only in a conversation approved for that test. An accepted receipt is not model completion; do not automatically replay an uncertain write.
+
+If the world stays offline, check the selected BotNexus home, sync result, agent IDs, token-file access, environment overrides, TLS and the connector route to ingress `8081`. A login redirect usually means the operator URL was used. Do not print the token or disable TLS verification to diagnose it. A retained offline snapshot is not fresh data.
+
+Repeat with a **separate enrollment and token per world**. See the [full connector guide](docs/connector.md) for all settings, build checks and recovery details.
+
+Never mount a live world's configuration, state, credentials, workspace, tools or container socket into Hub or its tests. Hub needs no access to those files.
 
 The connector exports at most 100 recent conversations and 100 pending questions by default, with a seven-day conversation lookback. The older gateway store contract still reads unbounded metadata before filtering. These output limits do not bound database work on a large world. See [data limits](docs/connector.md#data-limits-and-privacy).
 

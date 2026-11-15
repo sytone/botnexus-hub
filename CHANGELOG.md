@@ -1,5 +1,9 @@
 # Changelog
 
+## Documentation updates
+
+- Add a complete existing-world extension install walkthrough to the README: prerequisites, pinned source registration, sync, protected token-file configuration, explicit agent allowlist, owner-run restart, connection checks, and offline troubleshooting. Application and connector versions remain 0.2.0.
+
 ## 0.2.0
 
 - Replace native operator authentication with external preauthentication. The reverse proxy owns identity, SSO, groups, MFA, rate limits and sessions; Hub no longer provides an operator token, login cookie or logout flow.
