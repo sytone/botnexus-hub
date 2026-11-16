@@ -1,6 +1,6 @@
 # Release verification checklist
 
-This is the gate checklist for application version **0.2.0**, not a report of passed runs. It does not certify a deployment as secure or production-ready. Record actual commands, exit codes and results against the exact reviewed source revision and `VERSION`. Do not copy counts or deployment claims from an earlier release.
+This is the gate checklist for application version **0.2.1**, not a report of passed runs. It does not certify a deployment as secure or production-ready. Record actual commands, exit codes and results against the exact reviewed source revision and `VERSION`. Do not copy counts or deployment claims from an earlier release.
 
 All app changes require Python tests, Node UI/theme tests, connector build/tests and isolated container/browser E2E before release. Recovery and ingress/access-policy checks below are separate gates, not substitutes for unit tests.
 
@@ -115,6 +115,9 @@ The enroller saves synthetic connector tokens in the private test `.env` without
 The browser suite needs Playwright and the browser selected by the reviewed harness. Its disposable browser context may use only the **test-only** ingress secret, restricted to the test origin and without forwarding it through redirects or portal handoffs. This is test infrastructure, not a browser authentication design for deployment. Keep generated screenshots local in ignored test output; do not include them in the public release.
 
 - [ ] Both `test-a` and `test-b` connect with only `helper` visible.
+- [ ] A 0.2.0 connector still connects to Hub 0.2.1 with the same token. A corrected authenticated snapshot URL updates world, conversation and question handoffs without re-enrollment; an unsafe/missing URL does not create an unsafe link.
+- [ ] Exact-ID removal supports cancel, sends one DELETE only after confirmation, revokes the old token and leaves the other world connected. Errors/uncertain outcomes are not success and are never automatically retried. A stale in-flight refresh cannot restore a removed card.
+- [ ] Offline worlds persist until explicit removal. Re-enrolling a removed ID issues a new token and never restores the old credential.
 - [ ] Start conversations, send messages, deduplicate a repeated request, receive a real durable question, answer it and observe activity.
 - [ ] Browser: no native login/token/logout controls; no mutation on page load or secure-access recovery.
 - [ ] Browser: new conversation, message, question answer/cancel, portal handoff in a separate credential-free context, offline/freshness display and no uncaught page errors.

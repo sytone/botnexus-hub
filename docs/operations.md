@@ -8,7 +8,7 @@ Use one Hub instance with one backend process. Connections and queues are in mem
 
 ## External preauthentication
 
-Version 0.2.0 has no native operator password/token, login API, session cookie or logout API. The external reverse proxy owns identity, SSO, group restrictions, MFA, session lifetime and rate limits. A private shared header connects that policy to the operator ingress; it is not a user credential.
+Since 0.2.0, Hub has no native operator password/token, login API, session cookie or logout API. The external reverse proxy owns identity, SSO, group restrictions, MFA, session lifetime and rate limits. A private shared header connects that policy to the operator ingress; it is not a user credential.
 
 ### Listener contract
 
@@ -137,6 +137,14 @@ A normal redeploy never deletes volumes. Never run `compose down -v` on a config
 `accepted` means the world admitted the command, not that the model finished. Hub stores stable command IDs and client idempotency keys. A lost connection, restart or timeout can yield `uncertain`. Inspect the world before submitting a fresh command. Do not automatically replay an uncertain write.
 
 A completed question disappears after a later successful snapshot. A failed store read must not be reported as a successful empty snapshot. An offline world's retained snapshot is historical data; check both connection state and observation time.
+
+## Portal addresses and world removal
+
+World links in Hub 0.2.1 prefer the latest validated connector snapshot's `baseUrl`. Enrollment `baseUrl` remains the fallback before a snapshot. A world owner can correct `worldBaseUrl` in its complete connector configuration and restart that gateway; existing 0.2.0 connectors already publish it. No enrollment deletion, token rotation or database edit is needed. The last received snapshot address remains available offline, clearly marked as historical data.
+
+**Remove world** requires the exact ID before sending one enrollment-only DELETE. It revokes that token and disconnects its socket. It does not uninstall the extension or delete the world's data. Hub retains command receipts and bounded activity history. A running connector may retry its now-invalid credential, but has no self-enrollment permission. To reconnect, explicitly add it again, save the new token into its protected token file, and have the world owner restart its gateway. Disable the connector in the world and plan its restart if retries must stop. Offline worlds do not expire; temporary outages must not remove enrollments.
+
+A failed/ambiguous removal is not reported as success or automatically retried. Refresh the world list to resolve the current state before deciding on another explicit action. Do not remove and re-add a world merely to correct its portal address.
 
 ## Recovery
 

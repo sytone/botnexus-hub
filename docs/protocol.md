@@ -1,6 +1,6 @@
 # BotNexusHub protocol
 
-Application version **0.2.0** uses wire protocol **1**. The app is Python/FastAPI with SQLite and a same-origin static UI. The world extension is a .NET 10 hosted service with an outbound WebSocket. Hub accepts only explicit new-conversation, message and prompt-answer commands. No inbound gateway port, gateway admin credential, raw SQL, shell command or platform change is part of this protocol.
+Application version **0.2.1** uses wire protocol **1**. The app is Python/FastAPI with SQLite and a same-origin static UI. The world extension is a .NET 10 hosted service with an outbound WebSocket. Hub accepts only explicit new-conversation, message and prompt-answer commands. No inbound gateway port, gateway admin credential, raw SQL, shell command or platform change is part of this protocol.
 
 Run one Hub backend process. Routing is in memory; extra workers or replicas are not supported. Every externally admitted operator can control all enrolled worlds. Hub is not a multi-tenant identity broker or a replacement for a world's own permissions.
 
@@ -36,6 +36,8 @@ Enrollment returns a new random connector token under `token` and `connectorToke
 
 The token is **shown once, but reused** for each connection until explicit rotation or revocation. It is not a one-time-use token. `POST /api/worlds/{worldId}/rotate-token` returns the replacement once, invalidates the old token and disconnects the old socket. `DELETE /api/worlds/{worldId}` revokes enrollment. `POST /api/worlds/{worldId}/disconnect` only disconnects; it does not invalidate the token or prevent reconnect.
 
+Removal does not uninstall the extension or delete world data. It revokes the existing credential; a connector cannot self-enroll, even if it keeps retrying. Re-enrollment is an explicit operator action that generates a new token. Offline enrollments have no automatic expiration.
+
 A world authenticates its WebSocket handshake with:
 
 ```text
@@ -65,7 +67,7 @@ The connector sends an initial snapshot and then normally updates every 15 secon
   "worldId": "test-a",
   "name": "Workshop Alpha",
   "baseUrl": "https://world.example.com",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "observedAt": "2030-01-01T00:00:00Z",
   "agents": [
     {"id": "helper", "name": "Helper", "description": "Example agent"}
@@ -78,6 +80,8 @@ The connector sends an initial snapshot and then normally updates every 15 secon
   ]
 }
 ```
+
+The Hub UI uses the latest normalized snapshot `baseUrl` for portal and conversation handoffs, including a retained offline snapshot. Enrollment `baseUrl` is only the fallback when no safe snapshot address is available. The authenticated connector may update its own portal address without rotating the token or re-enrolling. This is compatible with the 0.2.0 connector; the wire protocol is still 1.
 
 Only allowlisted, visible, enabled named agents and active, user-facing, top-level conversations are exported. Defaults are a seven-day conversation activity lookback, at most 100 conversations and at most 100 pending questions. Questions are queried separately from recent conversations, so an older unresolved question can still appear.
 

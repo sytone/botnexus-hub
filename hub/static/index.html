@@ -124,6 +124,19 @@
       </form>
     </dialog>
 
+    <dialog id="remove-world-dialog" class="dialog" aria-labelledby="remove-world-title" aria-describedby="remove-world-help">
+      <form id="remove-world-form" autocomplete="off">
+        <div class="dialog-heading"><h2 id="remove-world-title">Remove world from Hub?</h2><button class="icon-button" type="button" data-close="remove-world-dialog" aria-label="Close remove world">×</button></div>
+        <div class="dialog-body">
+          <p id="remove-world-name"></p>
+          <p id="remove-world-help" class="muted">This revokes this world's Hub enrollment and disconnects its connector. It does not uninstall the extension or delete the world's conversations or files. To reconnect later, enroll it again with a new token. Offline worlds do not expire automatically.</p>
+          <label for="remove-world-confirm">Type the world ID to confirm</label><input id="remove-world-confirm" name="worldId" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+          <p id="remove-world-error" class="notice notice-danger" role="alert" hidden></p>
+        </div>
+        <div class="dialog-actions"><button id="remove-world-cancel" class="button button-secondary" type="button" data-close="remove-world-dialog">Cancel</button><button id="remove-world-submit" class="button button-secondary danger-text" type="submit" disabled>Remove world</button></div>
+      </form>
+    </dialog>
+
     <dialog id="world-dialog" class="dialog" aria-labelledby="world-dialog-title">
       <div class="dialog-heading"><div><span class="eyebrow">BRING YOUR WORLDS TOGETHER</span><h2 id="world-dialog-title">Add a world</h2></div><button class="icon-button" type="button" data-close="world-dialog" aria-label="Close add world">×</button></div>
       <form id="world-form" autocomplete="off">

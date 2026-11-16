@@ -5,7 +5,7 @@ services:
       context: .
       args:
         HUB_COMMIT: ${HUB_COMMIT:-unknown}
-    image: localhost/botnexushub:0.2.0
+    image: localhost/botnexushub:0.2.1
     container_name: botnexushub
     init: true
     restart: unless-stopped
@@ -91,7 +91,7 @@ services:
       retries: 3
   world-a:
     profiles: [test]
-    image: localhost/botnexushub-test-world:0.2.0
+    image: localhost/botnexushub-test-world:0.2.1
     build:
       context: .
       dockerfile: tests/connected-world.Dockerfile
@@ -124,7 +124,7 @@ services:
       retries: 4
   world-b:
     profiles: [test]
-    image: localhost/botnexushub-test-world:0.2.0
+    image: localhost/botnexushub-test-world:0.2.1
     container_name: botnexushub-world-b
     init: true
     restart: unless-stopped

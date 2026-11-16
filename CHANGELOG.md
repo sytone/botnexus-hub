@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Correct world, conversation and question handoff links to use the portal address in the latest validated connector snapshot. Keep the enrollment URL as a safe fallback and retain the last snapshot address while offline. Existing 0.2.0 connectors work without a protocol change or rebuild.
+- Add **Remove world** to each world card with exact-ID confirmation, cancel, enrollment-only revocation and no automatic retry. Handle empty 204 responses and reject stale in-flight world reads after removal.
+- Document portal corrections, owner-run configuration/restart, explicit re-enrollment with a new token, and the difference between offline, disconnect and removal. Offline worlds do not expire.
+
 ## Documentation updates
 
 - Default extension installation and updates to `--ref main` for latest source. Explain the optional published-tag track without claiming that the displayed application version is already a Git tag.

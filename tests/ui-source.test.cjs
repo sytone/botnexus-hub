@@ -715,3 +715,142 @@ test('Protected request timeouts clear private state while intentional hidden-ta
   assert.equal(hidden.id('access-panel').hidden, true);
   assert.match(hidden.id('world-grid').textContent, /Private world/);
 });
+
+// Regression: enrollment metadata can be wrong or old while the authenticated
+// connector advertises the corrected portal. Exercise the real render path.
+function descendants(node, predicate) {
+  return node.children.flatMap((child) => [ ...(predicate(child) ? [child] : []), ...descendants(child, predicate) ]);
+}
+function removalButton(h) {
+  return descendants(h.id('world-grid'), (node) => node.getAttribute('data-action') === 'remove-world')[0];
+}
+
+test('Portal handoffs prefer the latest safe connector snapshot, including retained offline data', () => {
+  const h = helpers();
+  for (const connected of [true, false]) {
+    const [world] = h.normalizeWorlds([{ ...syntheticWorld, connected, snapshot: { ...syntheticWorld.snapshot, baseUrl: 'https://correct.example.test/portal/' } }]);
+    assert.equal(world.baseUrl, 'https://correct.example.test/portal');
+    assert.equal(h.conversationUrl(world.baseUrl, 'homelab', 'c_home'), 'https://correct.example.test/portal/agent/homelab/conversation/c_home');
+  }
+  for (const baseUrl of [undefined, '', null, 'javascript:alert(1)', 'https://user:secret@wrong.example.test', 'https://wrong.example.test/?token=secret']) {
+    const [world] = h.normalizeWorlds([{ ...syntheticWorld, snapshot: { ...syntheticWorld.snapshot, baseUrl } }]);
+    assert.equal(world.baseUrl, syntheticWorld.baseUrl, String(baseUrl));
+  }
+  const [unavailable] = h.normalizeWorlds([{ id: 'bad', baseUrl: 'javascript:bad', snapshot: { baseUrl: 'file:///private' } }]);
+  assert.equal(unavailable.baseUrl, '');
+});
+
+test('World, conversation and question links update after a corrected connector snapshot without writes', async () => {
+  const initial = { ...syntheticWorld, snapshot: { ...syntheticWorld.snapshot,
+    baseUrl: 'https://old.example.test',
+    conversations: [{ id: 'c_home', agentId: 'homelab', title: 'Home conversation', updatedAt: '2026-01-01T12:00:00Z' }],
+    questions: [{ conversationId: 'c_home', agentId: 'homelab', requestId: 'r_home', prompt: 'Question', inputType: 'free_form', choices: [] }],
+  } };
+  const h = await appHarness({ worlds: [initial] });
+  h.setResponder((path, options, normal) => path === '/api/worlds' ? reply({ items: [{ ...initial, snapshot: { ...initial.snapshot, baseUrl: 'https://correct.example.test/prefix/' } }] }) : normal(path));
+  await h.window.__hub.refresh();
+  for (const id of ['world-grid', 'conversation-list', 'question-list']) {
+    const links = descendants(h.id(id), (node) => node.tagName === 'A' && node.href);
+    assert.ok(links.length, id);
+    for (const link of links) assert.ok(link.href.startsWith('https://correct.example.test/prefix'), link.href);
+  }
+  assert.equal(h.fetches.some(({ options }) => options.method !== 'GET'), false);
+});
+
+test('Remove world requires its exact ID, supports cancel, and sends one enrollment-only DELETE', async () => {
+  let deleted = false;
+  const h = await appHarness({ worlds: [syntheticWorld], respond(path, options, normal) {
+    if (path === '/api/worlds/test-a' && options.method === 'DELETE') { deleted = true; return reply('', { status: 204, contentType: '' }); }
+    if (path === '/api/worlds' && deleted) return reply({ items: [] });
+    return normal(path);
+  } });
+  await removalButton(h).fire('click');
+  assert.equal(h.id('remove-world-dialog').open, true);
+  assert.match(h.id('remove-world-name').textContent, /Private world/);
+  await h.id('remove-world-form').fire('submit');
+  assert.equal(h.fetches.some(({ options }) => options.method === 'DELETE'), false);
+  await h.id('remove-world-cancel').fire('click');
+  assert.equal(h.id('remove-world-dialog').open, false);
+  await removalButton(h).fire('click');
+  h.id('remove-world-confirm').value = 'wrong';
+  await h.id('remove-world-form').fire('submit');
+  assert.equal(deleted, false);
+  h.id('remove-world-confirm').value = 'test-a';
+  await h.id('remove-world-confirm').fire('input');
+  await h.id('remove-world-form').fire('submit');
+  await h.id('remove-world-form').fire('submit');
+  assert.equal(deleted, true);
+  assert.equal(h.id('remove-world-dialog').open, false);
+  assert.equal(h.id('world-count').textContent, '0');
+  const writes = h.fetches.filter(({ options }) => options.method !== 'GET');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].path, '/api/worlds/test-a');
+  assert.equal(writes[0].options.method, 'DELETE');
+  assert.equal(writes[0].options.body, undefined);
+  assert.equal(writes[0].options.headers['X-Hub-Request'], '1');
+  assert.equal(writes[0].options.redirect, 'error');
+  assert.match(h.id('announcer').textContent, /removed|Removed/);
+});
+
+test('Failed or ambiguous removal is not called success and never auto-retries', async () => {
+  for (const status of [409, 500]) {
+    const h = await appHarness({ worlds: [syntheticWorld], respond(path, options, normal) {
+      return options.method === 'DELETE' ? reply({ detail: 'Synthetic rejection' }, { status }) : normal(path);
+    } });
+    await removalButton(h).fire('click');
+    h.id('remove-world-confirm').value = 'test-a';
+    await h.id('remove-world-form').fire('submit');
+    assert.equal(h.id('remove-world-dialog').open, true);
+    assert.equal(h.id('world-count').textContent, '1');
+    assert.match(h.id('remove-world-error').textContent, status === 500 ? /unknown/i : /Synthetic rejection/);
+    await h.window.__hub.refresh();
+    assert.equal(h.fetches.filter(({ options }) => options.method === 'DELETE').length, 1);
+  }
+});
+
+test('Access denial during removal clears dialog details without navigation or replay', async () => {
+  const h = await appHarness({ worlds: [syntheticWorld], respond(path, options, normal) {
+    return options.method === 'DELETE' ? reply({ detail: 'denied' }, { status: 403 }) : normal(path);
+  } });
+  await removalButton(h).fire('click');
+  h.id('remove-world-confirm').value = 'test-a';
+  await h.id('remove-world-form').fire('submit');
+  assert.equal(h.id('access-panel').hidden, false);
+  assert.equal(h.id('remove-world-dialog').open, false);
+  assert.equal(h.id('remove-world-name').textContent, '');
+  assert.equal(h.id('remove-world-confirm').value, '');
+  await h.window.__hub.refresh();
+  assert.equal(h.fetches.filter(({ options }) => options.method === 'DELETE').length, 1);
+  assert.deepEqual(h.navigations, []);
+});
+
+
+test('A world read started before removal cannot restore the removed card', async () => {
+  const h = await appHarness({ worlds: [syntheticWorld] });
+  let finishStaleRead;
+  let deleted = false;
+  h.setResponder((path, options, normal) => {
+    if (path === '/api/worlds/test-a' && options.method === 'DELETE') {
+      deleted = true;
+      return reply('', { status: 204, contentType: '' });
+    }
+    if (path === '/api/worlds') {
+      if (!deleted) return new Promise((resolve) => { finishStaleRead = resolve; });
+      return reply({ items: [] });
+    }
+    return normal(path);
+  });
+  const staleRefresh = h.window.__hub.refresh();
+  await settle();
+  assert.equal(typeof finishStaleRead, 'function');
+  await removalButton(h).fire('click');
+  h.id('remove-world-confirm').value = 'test-a';
+  await h.id('remove-world-form').fire('submit');
+  assert.equal(h.id('world-count').textContent, '0');
+  finishStaleRead(reply({ items: [syntheticWorld] }));
+  await staleRefresh;
+  await settle();
+  assert.equal(h.id('world-count').textContent, '0');
+  assert.equal(removalButton(h), undefined);
+  assert.equal(h.fetches.filter(({ options }) => options.method === 'DELETE').length, 1);
+});

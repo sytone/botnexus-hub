@@ -46,7 +46,7 @@ botnexus --target <world-home> extensions list
 botnexus --target <world-home> extensions sync
 ```
 
-For a **tagged release**, replace `main` in `add` or `update` with the exact published tag from the [tags page](https://github.com/sytone/botnexus-hub/tags). No release tags exist yet; version `0.2.0` alone is not a Git tag. A reviewed commit is also accepted when you need a fixed source revision. The Hub ref is separate from the pinned platform compatibility reference above.
+For a **tagged release**, replace `main` in `add` or `update` with the exact published tag from the [tags page](https://github.com/sytone/botnexus-hub/tags). No release tags exist yet; version `0.2.1` alone is not a Git tag. A reviewed commit is also accepted when you need a fixed source revision. The Hub ref is separate from the pinned platform compatibility reference above.
 
 The public Git URL is a source reference, not a Hub service address. No private Git host, local repository path or credential-bearing URL is required.
 
@@ -153,6 +153,14 @@ After the owner's restart:
 4. In a deliberately approved test conversation, try a harmless message/question. An accepted receipt is queue admission, not model completion. Inspect the world after an uncertain result; do not auto-retry a write.
 
 If offline, check the selected BotNexus home, lifecycle result, exact IDs, explicit agent allowlist, secret-file readability, higher-priority environment values, TLS and routing to connector port `8081`. A login redirect usually means the connector was sent to an operator route. Invalid configuration disables only the connector and logs a fixed warning. Do not print secrets to diagnose it or enable insecure transport to hide a TLS problem. An offline world's retained snapshot is not fresh data.
+
+## Correct a portal address or remove enrollment
+
+Hub 0.2.1 uses `baseUrl` from the latest validated, authenticated connector snapshot for world, conversation and question links. The original enrollment URL is the fallback before a snapshot; the latest stored snapshot URL is retained while offline. Changing a connector's `worldBaseUrl` therefore does not require deleting or re-enrolling the world. The 0.2.0 connector already sends this field, and wire protocol 1 is unchanged.
+
+Read the extension configuration privately, then replace the complete `gateway.extensions.botnexus-hub-connector` object with the corrected `worldBaseUrl`. Preserve the existing `worldId`, `url`, `worldTokenFile`, allowlist and any optional settings. Check for environment overrides. Configuration is read at connector startup, so the owner must plan and perform the gateway restart. Confirm a fresh snapshot, then test both **Open world** and a conversation link. Do not change `url`, which is the Hub connector ingress address.
+
+To retire a world, choose **Remove world** on its Hub card and type the exact world ID. This revokes enrollment and its token and disconnects the socket. It does not uninstall the extension or delete data in that world. A running connector may keep retrying with its rejected token; it cannot re-register itself. The owner can disable the connector and plan a gateway restart to stop retries. Reconnecting after removal requires explicit enrollment, a newly issued token saved in the protected file, and an owner-run gateway restart. A temporary disconnect or Hub restart retains enrollment and allows the original token to reconnect. Offline worlds never expire automatically.
 
 ## Build and reference checks
 

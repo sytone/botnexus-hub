@@ -55,7 +55,9 @@
       return {
         id: row.id,
         name: text(row.name, row.id),
-        baseUrl: text(row.baseUrl),
+        // The authenticated connector owns its current portal address. Keep the
+        // last snapshot address while offline; enrollment is only the fallback.
+        baseUrl: safeConnectorUrl(snapshot?.baseUrl) || safeConnectorUrl(row.baseUrl) || '',
         connected: row.connected === true,
         lastSeen: text(row.lastSeen),
         observedAt: snapshot ? text(snapshot.observedAt) : '',
@@ -159,6 +161,8 @@
     worldSubmit: byId('world-submit'), worldError: byId('world-error'), enrollment: byId('world-enrollment'), connectorToken: byId('connector-token'),
     connectorSnippet: byId('connector-snippet'), connectorHeader: byId('connector-header-snippet'), enrollmentFeedback: byId('enrollment-feedback'),
     revealToken: byId('reveal-connector-token'), commandsPanel: byId('commands-panel'), commands: byId('command-list'), announcer: byId('announcer'),
+    removeDialog: byId('remove-world-dialog'), removeForm: byId('remove-world-form'), removeName: byId('remove-world-name'),
+    removeConfirm: byId('remove-world-confirm'), removeSubmit: byId('remove-world-submit'), removeError: byId('remove-world-error'),
   };
   const state = {
     authenticated: false, connectorUrl: '', epoch: 0, worlds: [], activity: [], filter: '', activeTab: 'conversations',
@@ -167,6 +171,7 @@
     conversationNodes: new Map(), questionNodes: new Map(), commandNodes: new Map(),
     commands: [], locks: new Map(), sequence: 0, starting: false, startBlocked: false,
     enrolling: false, enrollmentUnknown: false, enrollment: null, tokenRevealed: false,
+    removeWorldId: '', removing: false, removalUnknown: false, worldRevision: 0,
   };
 
   function el(tag, className, value) {
@@ -243,6 +248,7 @@
       const response = await window.fetch(path, options);
       if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400) || response.redirected || response.type === 'opaqueredirect') throw accessDenied(response.status);
       if (/text\/html|application\/xhtml\+xml/i.test(response.headers.get('Content-Type') || '')) throw accessDenied(response.status);
+      if (method === 'DELETE' && response.status === 204) return { data: null, status: 204 };
       const raw = await response.text();
       let data;
       try { data = JSON.parse(raw); } catch (_) {
@@ -296,6 +302,7 @@
   function closeDialog(dialog) {
     if (dialog === ui.worldDialog && state.enrolling) return;
     if (dialog === ui.conversationDialog && state.starting) return;
+    if (dialog === ui.removeDialog && state.removing) return;
     if (dialog === ui.worldDialog) clearEnrollment();
     dialog.close();
   }
@@ -323,6 +330,9 @@
     state.enrolling = false;
     state.startBlocked = false;
     state.enrollmentUnknown = false;
+    state.worldRevision += 1;
+    clearRemoval();
+    if (ui.removeDialog.open) ui.removeDialog.close();
     clearEnrollment();
     if (ui.worldDialog.open) ui.worldDialog.close();
     if (ui.conversationDialog.open) ui.conversationDialog.close();
@@ -395,13 +405,17 @@
     ui.refresh.disabled = true;
     const epoch = state.epoch;
     const filter = state.filter;
+    const worldRevision = state.worldRevision;
     const query = new URLSearchParams({ limit: '50' });
     if (filter) query.set('worldId', filter);
     try {
       const results = await Promise.allSettled([api('/api/worlds'), api(`/api/activity?${query}`)]);
       if (!state.authenticated || epoch !== state.epoch || !visible()) return;
       const errors = [];
-      if (results[0].status === 'fulfilled' && Array.isArray(results[0].value.data?.items)) {
+      if (worldRevision !== state.worldRevision) {
+        // A read started before removal must not restore the removed card.
+        state.refreshAgain = true;
+      } else if (results[0].status === 'fulfilled' && Array.isArray(results[0].value.data?.items)) {
         state.worlds = normalizeWorlds(results[0].value.data.items);
         state.loaded = true;
         state.lastRefresh = new Date().toISOString();
@@ -505,10 +519,77 @@
         footer.append(link);
       } else footer.append(el('span', 'muted', 'Portal URL unavailable'));
       footer.append(el('span', 'world-version', world.version ? `v${world.version.replace(/^v/, '')}` : world.connected ? 'Awaiting snapshot' : 'Commands paused'));
+      const remove = el('button', 'button button-quiet button-small danger-text', 'Remove world');
+      remove.type = 'button';
+      remove.setAttribute('data-action', 'remove-world');
+      remove.setAttribute('aria-label', `Remove world ${world.name}`);
+      remove.disabled = state.removing;
+      remove.addEventListener('click', () => openRemoval(world.id));
+      footer.append(remove);
       card.append(top, metrics, freshness, footer);
       return card;
     }));
   }
+
+  function clearRemoval() {
+    state.removeWorldId = '';
+    state.removalUnknown = false;
+    ui.removeName.textContent = '';
+    ui.removeConfirm.value = '';
+    ui.removeConfirm.placeholder = '';
+    ui.removeSubmit.disabled = true;
+    showNotice(ui.removeError, '');
+  }
+
+  function openRemoval(worldId) {
+    const world = worldById(worldId);
+    if (!state.authenticated || !world || state.removing) return;
+    clearRemoval();
+    state.removeWorldId = world.id;
+    ui.removeName.textContent = `${world.name} (${world.id})`;
+    ui.removeConfirm.placeholder = world.id;
+    ui.removeDialog.showModal();
+    ui.removeConfirm.focus();
+  }
+
+  ui.removeConfirm.addEventListener('input', () => {
+    ui.removeSubmit.disabled = state.removing || state.removalUnknown || ui.removeConfirm.value !== state.removeWorldId;
+  });
+  ui.removeForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const id = state.removeWorldId;
+    if (!state.authenticated || !id || state.removing || state.removalUnknown || ui.removeConfirm.value !== id) return;
+    const epoch = state.epoch;
+    state.removing = true;
+    ui.removeSubmit.disabled = true;
+    showNotice(ui.removeError, '');
+    try {
+      const response = await api(`/api/worlds/${encodeURIComponent(id)}`, 'DELETE');
+      if (!state.authenticated || epoch !== state.epoch) return;
+      if (response.status !== 204) throw new ApiError('Removal did not return the expected confirmation.', 0, 'invalid-response');
+      state.worldRevision += 1;
+      state.worlds = state.worlds.filter((world) => world.id !== id);
+      ui.removeDialog.close();
+      clearRemoval();
+      renderDashboard();
+      announce('World removed from Hub. Its enrollment is revoked; the world itself was not changed.');
+      void refreshDashboard();
+    } catch (error) {
+      if (!state.authenticated || epoch !== state.epoch) return;
+      state.removalUnknown = !error.status || error.status >= 500 || error.kind === 'invalid-response';
+      showNotice(ui.removeError, state.removalUnknown
+        ? 'Removal outcome unknown. It was not retried. Close this dialog and refresh the world list before deciding whether to try again.'
+        : error.message);
+    } finally {
+      state.removing = false;
+      if (state.authenticated && epoch === state.epoch) {
+        ui.removeSubmit.disabled = state.removalUnknown || !state.removeWorldId || ui.removeConfirm.value !== state.removeWorldId;
+        renderWorlds();
+      }
+    }
+  });
+  ui.removeDialog.addEventListener('cancel', (event) => { if (state.removing) event.preventDefault(); });
+  ui.removeDialog.addEventListener('close', clearRemoval);
 
   function keyedList(container, map, rows, keyOf, create, update, placeholder) {
     const keys = new Set(rows.map(keyOf));

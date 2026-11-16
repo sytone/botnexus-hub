@@ -700,3 +700,60 @@ def test_repeated_results_cannot_change_a_terminal_outcome(client, auth):
         fresh = submit(client, auth)
         assert ws.receive_json()["id"] == fresh.json()["id"]
         assert get_command(client, auth, command_id)["status"] == "failed"
+
+
+def test_corrected_portal_url_reaches_snapshot_without_reenrollment(client, auth):
+    world = register(client, auth)
+    with connect(client, world) as ws:
+        frame = snapshot()
+        frame['baseUrl'] = 'https://corrected.example.test/portal/'
+        state = publish(ws, client, auth, frame)
+        assert state['baseUrl'] == world['baseUrl']  # enrollment remains the fallback
+        assert state['snapshot']['baseUrl'] == 'https://corrected.example.test/portal'
+        frame['observedAt'] = '2026-01-03T03:04:05Z'
+        frame['baseUrl'] = 'https://newer.example.test'
+        state = publish(ws, client, auth, frame)
+        assert state['snapshot']['baseUrl'] == 'https://newer.example.test'
+    with connect(client, world) as ws:  # the same credential still works
+        publish(ws, client, auth, frame)
+    offline = wait_for(lambda: worlds(client, auth)[0], lambda value: not value['connected'])
+    assert offline['snapshot']['baseUrl'] == 'https://newer.example.test'
+
+
+def test_remove_world_revokes_only_that_enrollment_and_preserves_other_world(client, auth):
+    world = register(client, auth)
+    other = register(client, auth, 'test-b')
+    with connect(client, world) as ws:
+        publish(ws, client, auth)
+        response = client.delete('/api/worlds/test-a', headers=auth)
+        assert response.status_code == 204 and response.content == b''
+        assert [row['id'] for row in worlds(client, auth)] == ['test-b']
+    with pytest.raises(WebSocketDisconnect):
+        with connect(client, world):
+            pass
+    with connect(client, other):
+        assert client.get('/api/worlds', headers=auth).status_code == 200
+    assert client.delete('/api/worlds/test-a', headers=auth).status_code == 404
+
+
+def test_offline_world_does_not_expire_on_reads(client, auth):
+    register(client, auth)
+    with client.app.state.store.lock, client.app.state.store.db:
+        client.app.state.store.db.execute('UPDATE worlds SET last_seen=? WHERE id=?', ('2000-01-01T00:00:00Z', 'test-a'))
+    listed = worlds(client, auth)
+    assert len(listed) == 1 and listed[0]['connected'] is False
+    assert listed[0]['lastSeen'] == '2000-01-01T00:00:00Z'
+
+
+def test_reenrollment_issues_new_token_and_does_not_restore_removed_credential(client, auth):
+    previous = register(client, auth)
+    assert client.delete('/api/worlds/test-a', headers=auth).status_code == 204
+    replacement = register(client, auth)
+    assert replacement['connectorToken'] != previous['connectorToken']
+    with pytest.raises(WebSocketDisconnect):
+        with connect(client, previous):
+            pass
+    with connect(client, replacement) as ws:
+        publish(ws, client, auth)
+    with connect(client, replacement) as ws:
+        publish(ws, client, auth)

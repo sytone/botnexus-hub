@@ -1,6 +1,6 @@
 # BotNexusHub
 
-**Version 0.2.0** · [Source repository](https://github.com/sytone/botnexus-hub) · [Install into an existing world](#install-the-extension-into-an-existing-world)
+**Version 0.2.1** · [Source repository](https://github.com/sytone/botnexus-hub) · [Install into an existing world](#install-the-extension-into-an-existing-world)
 
 Already running BotNexus? Follow the [existing-world install steps](#install-the-extension-into-an-existing-world) below. Install the connector on each world; run the Hub separately.
 
@@ -11,6 +11,7 @@ One view across your BotNexus worlds. The Hub is a separate Python/FastAPI app w
 - See connected worlds, allowlisted agents, recent active conversations, open questions and recent activity.
 - Start a conversation, send a message, or answer/cancel a pending question in a connected world.
 - Open the world's own portal for the full conversation and the agent's work. Hub does not copy full transcripts, tool output, system prompts or world credentials.
+- Remove a world enrollment with an exact-ID confirmation. This revokes its Hub token, not the world itself.
 - Use system, light or dark theme on desktop and mobile.
 
 A successful command receipt means **accepted by the world**, not that the agent finished. If its outcome is uncertain, inspect the world before submitting a fresh command. Do not automatically replay it.
@@ -19,7 +20,7 @@ Run **one Hub instance with one backend process**. Connector routing and send qu
 
 ## Access architecture
 
-Version 0.2.0 uses **external preauthentication**. Your reverse proxy owns identity, sign-in, SSO, group policy, MFA, session expiry and rate limits. Hub has no native operator token, password, login form, session cookie or logout endpoint.
+Since version 0.2.0, Hub uses **external preauthentication**. Your reverse proxy owns identity, sign-in, SSO, group policy, MFA, session expiry and rate limits. Hub has no native operator token, password, login form, session cookie or logout endpoint.
 
 The example addresses below are placeholders, not hosted services:
 
@@ -121,7 +122,7 @@ botnexus --target <world-home> extensions list
 botnexus --target <world-home> extensions sync
 ```
 
-**Tagged release (when available):** there are currently no release tags. The displayed app version `0.2.0` is not a Git tag. Once a tag is published on the [tags page](https://github.com/sytone/botnexus-hub/tags), replace `main` in the `add` or `update` command with that exact tag. For example, replace `<release-tag>` before running:
+**Tagged release (when available):** there are currently no release tags. The displayed app version `0.2.1` is not a Git tag. Once a tag is published on the [tags page](https://github.com/sytone/botnexus-hub/tags), replace `main` in the `add` or `update` command with that exact tag. For example, replace `<release-tag>` before running:
 
 ```text
 botnexus --target <world-home> extensions update --id botnexushub --ref <release-tag> --updates
@@ -204,6 +205,12 @@ After restart:
 3. Choose **Open world** and check that it reaches the correct portal and its normal authentication. Test messages/questions only in a conversation approved for that test. An accepted receipt is not model completion; do not automatically replay an uncertain write.
 
 If the world stays offline, check the selected BotNexus home, sync result, agent IDs, token-file access, environment overrides, TLS and the connector route to ingress `8081`. A login redirect usually means the operator URL was used. Do not print the token or disable TLS verification to diagnose it. A retained offline snapshot is not fresh data.
+
+### Correct a portal URL or remove a world
+
+To fix a wrong portal address, update the connector's `worldBaseUrl` using the complete extension-object configuration above. Keep its existing ID, token-file path, connector `url`, allowlist and any optional settings. After the owner restarts that gateway, Hub uses the next authenticated snapshot's portal address for **Open world**, conversations and questions. A connector already on 0.2.0 supports this; no connector rebuild or new enrollment is needed for this correction. The enrollment address is the fallback until a snapshot arrives, and the last snapshot address is retained while offline.
+
+**Remove world** on a world card requires typing its exact ID. It deletes only the Hub enrollment and disconnects that connector. It does not uninstall the extension or delete the world's conversations/files. The old token is revoked: a running extension may retry, but it cannot register itself. To reconnect, explicitly add the world again, replace its protected token file with the new token, and have the owner restart that gateway. To stop retries permanently, the owner can disable the connector in that world and plan its restart. Offline worlds do **not** expire automatically. For a temporary outage or a URL correction, keep the enrollment.
 
 Repeat with a **separate enrollment and token per world**. See the [full connector guide](docs/connector.md) for all settings, build checks and recovery details.
 
