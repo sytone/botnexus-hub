@@ -8,6 +8,7 @@
 
 ## Documentation updates
 
+- Rework the README into a getting-started guide with a contents list: overview, container setup, existing-world extension installation, world registration/connection, and development/issues. Add copyable PowerShell path and settings examples, separate the three service/portal URLs, and keep safe update, token and owner-run restart guidance. Documentation only; app/connector version remains 0.2.1.
 - Default extension installation and updates to `--ref main` for latest source. Explain the optional published-tag track without claiming that the displayed application version is already a Git tag.
 - Add CLI configuration commands with an explicit target home, extension-only object replacement, secret-file references, private readback checks and update rules. Align the connector and verification guides. No app/connector code or version change.
 - Add a complete existing-world extension install walkthrough to the README: prerequisites, source registration, sync, protected token-file configuration, explicit agent allowlist, owner-run restart, connection checks, and offline troubleshooting. Application and connector versions remain 0.2.0.
