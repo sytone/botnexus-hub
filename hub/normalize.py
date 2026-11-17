@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 
 from .security import InvalidInput, MAX_FRAME_BYTES, canonical_json, routing_id, validate_base_url
 
 MAX_ITEMS = 100
 MAX_CHOICES = 50
 MAX_MESSAGE = 16_384
+CONVERSATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,255}\Z")
+
+
+def conversation_routing_id(value) -> bool:
+    return isinstance(value, str) and CONVERSATION_ID.fullmatch(value) is not None
 
 
 def text(value, limit: int, default: str = "") -> str:
@@ -50,37 +56,49 @@ def normalize_snapshot(frame, world: dict) -> dict:
     base_url = validate_base_url(frame["baseUrl"]) if "baseUrl" in frame else world["baseUrl"]
     agents, conversations, questions = [], [], []
     agent_ids, conversation_owners, question_ids = set(), {}, set()
-    excluded_conversations = set()
+    excluded_conversations, excluded_agents = set(), set()
     for item in array(frame, "agents"):
         if not isinstance(item, dict) or not routing_id(item.get("id")):
             continue
         if item.get("enabled", True) is not True or item.get("visible", True) is not True or item.get("hidden", False) is not False:
+            excluded_agents.add(item["id"])
             continue
         if item["id"] in agent_ids:
             continue
         agent_ids.add(item["id"])
         agents.append({"id": item["id"], "name": text(item.get("name"), 256), "description": text(item.get("description"), 512)})
+    agent_ids.difference_update(excluded_agents)
+    agents = [item for item in agents if item["id"] in agent_ids]
     for item in array(frame, "conversations"):
-        if not isinstance(item, dict) or not routing_id(item.get("id")):
+        if not isinstance(item, dict) or not conversation_routing_id(item.get("id")):
             continue
-        if item.get("agentId") not in agent_ids or item.get("status") != "active" or item.get("userFacing", True) is not True or item.get("isUserFacing", True) is not True:
+        if item.get("agentId") not in agent_ids or item.get("status") != "active" or item.get("userFacing", True) is not True or item.get("isUserFacing", True) is not True or item.get("visible", True) is not True or item.get("hidden", False) is not False:
             excluded_conversations.add(item["id"])
             continue
         if item.get("parentId") or item.get("parentConversationId") or item.get("isTopLevel", True) is not True or item.get("isSubagent", False) is not False:
             excluded_conversations.add(item["id"])
             continue
         if item["id"] in conversation_owners:
+            if conversation_owners[item["id"]] != item["agentId"]:
+                excluded_conversations.add(item["id"])
             continue
         conversation_owners[item["id"]] = item["agentId"]
         conversations.append({
             "id": item["id"], "agentId": item["agentId"], "title": text(item.get("title"), 256),
             "updatedAt": timestamp(item.get("updatedAt")), "status": "active", "pendingQuestion": None,
         })
+    # Conflicting or explicitly hidden duplicate routes fail closed, regardless
+    # of their order. Metrics use this same current visible ownership boundary.
+    conversations = [item for item in conversations if item["id"] not in excluded_conversations]
     for item in array(frame, "questions"):
         if not isinstance(item, dict) or not routing_id(item.get("requestId")):
             continue
         conversation_id, agent_id = item.get("conversationId"), item.get("agentId")
-        if not routing_id(conversation_id) or agent_id not in agent_ids or conversation_id in excluded_conversations:
+        if item.get("userFacing", True) is not True or item.get("isUserFacing", True) is not True or item.get("visible", True) is not True or item.get("hidden", False) is not False:
+            continue
+        if item.get("parentId") or item.get("parentConversationId") or item.get("isTopLevel", True) is not True or item.get("isSubagent", False) is not False:
+            continue
+        if not conversation_routing_id(conversation_id) or agent_id not in agent_ids or conversation_id in excluded_conversations:
             continue
         # All visible pending questions may include older conversations outside
         # the connector's recent-activity window. Keep their routing, not history.
@@ -149,7 +167,7 @@ def normalize_command(body) -> dict:
         raise InvalidInput("Invalid agent ID")
     result = {"agentId": payload["agentId"]}
     if action != "start_conversation":
-        if not routing_id(payload.get("conversationId")):
+        if not conversation_routing_id(payload.get("conversationId")):
             raise InvalidInput("Invalid conversation ID")
         result["conversationId"] = payload["conversationId"]
     if action == "start_conversation":
@@ -201,7 +219,7 @@ def normalize_result(frame) -> tuple[bool, dict | None, str | None]:
             raise InvalidInput("Invalid result data")
         result = {}
         if "conversationId" in data:
-            if not routing_id(data["conversationId"]):
+            if not conversation_routing_id(data["conversationId"]):
                 raise InvalidInput("Invalid result conversation ID")
             result["conversationId"] = data["conversationId"]
         if data.get("status") == "accepted":

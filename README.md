@@ -2,7 +2,7 @@
 
 **One place to see and work across your BotNexus worlds.** Run the Hub once, install the connector in each world, then choose which agents it can access.
 
-**Version 0.2.1** · [Source](https://github.com/sytone/botnexus-hub) · [Report an issue](https://github.com/sytone/botnexus-hub/issues)
+**Version 0.3.0** · [Source](https://github.com/sytone/botnexus-hub) · [Report an issue](https://github.com/sytone/botnexus-hub/issues)
 
 ## Contents
 
@@ -20,11 +20,13 @@
 
 BotNexusHub is a separate Python/FastAPI app with SQLite storage. It is not a BotNexus core fork and does not replace a world's own portal.
 
-- **Hub:** a dashboard for connected worlds, allowlisted agents, recent conversations, open questions and activity.
+- **Hub:** a dashboard for connected worlds, allowlisted agents, recent conversations, open questions, activity and numeric metrics history.
 - **World connector:** a small .NET extension loaded by each world's gateway. It opens an **outbound** WebSocket to Hub; no inbound world port or gateway admin key is needed.
 - **World portal:** where you open the full conversation and continue detailed work using that world's normal sign-in.
 
-From Hub, you can start a conversation, send a message, answer/cancel a pending question, or open the world's portal. The UI supports desktop/mobile and system, light and dark themes.
+From Hub, you can start a conversation, send a message, answer/cancel a pending question, or open the world's portal. The UI supports desktop/mobile and system, light and dark themes. Each world card can show one to three compact metric graphs. Open **Metrics** to compare worlds over time and filter by agent, conversation and date/time. [Metrics, collection and retention](docs/metrics.md).
+
+Metrics are stored separately from commands in `metrics.sqlite`, with **seven days of history by default**. You can change retention in the Metrics page. Resource counters and IDs are small, but SQLite indexes and per-sample rows still have a cost; a row cap is an additional safety bound, not a promise of unlimited storage.
 
 **This is not read-only.** Hub can send commands to allowlisted agents and receives their visible conversation metadata and explicit question text/choices. It does not copy full transcripts, tool output, system prompts or world credentials. Hub also stores the messages and answers submitted through it; protect its data volume and backups.
 
@@ -259,6 +261,7 @@ Then:
 1. Check the gateway's extension view/logs for loaded ID `botnexus-hub-connector`. `extensions list` alone proves registration, not a loaded service.
 2. In Hub, **Home** should become online with a fresh snapshot and only the intended agents, normally within about 15 seconds.
 3. Choose **Open world**, then a conversation handoff. Confirm the correct portal and its normal sign-in. Test writes only in a conversation approved for that test; acceptance is not model completion.
+4. With connector 0.3.0 or later, metrics start collecting from this point. CPU and I/O rates need a second sample; older connectors remain online but show no new metrics. The default metric interval is 30 seconds. To update an existing world, keep its enrollment/token and use the extension update/sync steps above, followed by the owner’s planned gateway restart. No history is invented or backfilled from transcripts.
 
 If it stays offline, check the selected home, sync result, agent IDs, token-file access, environment overrides, TLS and routing to connector listener `8081`. A login redirect usually means the operator URL was used. Do not print the token or disable TLS verification. A retained offline snapshot is not fresh data.
 
@@ -273,6 +276,15 @@ If it stays offline, check the selected home, sync result, agent IDs, token-file
 
 See the [full connector guide](docs/connector.md) for all settings, limits and recovery details.
 
+### Metrics and history
+
+- On a world card, choose its metric settings to select **one to three** resource charts. Click a graph to open that world’s full history.
+- Choose **Metrics** in the header to compare all worlds. Add or remove metrics and filter by world, agent, conversation and date/time. Different units use separate charts; different worlds stay separate series.
+- History starts when a metrics-capable connector connects. Blank means unavailable, not zero. Agent/conversation filters apply only to metrics with those IDs; machine counters are not attributed to an agent.
+- Start with **7 days** of retention. Changing the retention setting is an explicit shared Hub change; reducing it expires older metric samples. It does not prune command receipts or world conversations.
+- See [the metrics guide](docs/metrics.md) for counter definitions, container limits, storage caps, SQLite coverage and disabling collection.
+
+
 <a id="development-and-verification"></a>
 
 ## Development and issues
@@ -284,7 +296,7 @@ Work in an isolated development checkout with Python 3.12, Node.js with its buil
 ```text
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
-node --test tests/theme.test.cjs tests/ui-source.test.cjs
+node --test tests/*.test.cjs
 dotnet run --project tests/Connector.Tests/Connector.Tests.csproj -c Release -p:BotNexusBinaryDir=/matching/gateway
 git diff --check
 ```
@@ -326,5 +338,6 @@ Public releases are **source-only**. Do not publish gateway redistributions, DLL
 - [Connector settings, compatibility and privacy](docs/connector.md)
 - [Deployment, access policy, backups and recovery](docs/operations.md)
 - [Protocol, authentication and command semantics](docs/protocol.md)
+- [Metrics, history and retention](docs/metrics.md)
 - [Release verification checklist](docs/verification.md)
 - [Changelog](CHANGELOG.md)

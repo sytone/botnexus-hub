@@ -20,6 +20,7 @@ public sealed class HubConnectorService : BackgroundService
     private readonly IWorldContext _world;
     private readonly ILogger<HubConnectorService> _logger;
     private readonly IConfiguration? _configuration;
+    private readonly IServiceProvider? _services;
     private readonly IAskUserPromptResolver? _resolver;
     private readonly IAskUserCheckpointService? _checkpoints;
     private readonly Func<string, string?> _environment;
@@ -28,17 +29,19 @@ public sealed class HubConnectorService : BackgroundService
 
     public HubConnectorService(IConversationStore store, IAgentRegistry agents, IInboundMessageOrchestrator orchestrator,
         IWorldContext world, ILogger<HubConnectorService> logger, IConfiguration? configuration = null,
-        IAskUserPromptResolver? resolver = null, IAskUserCheckpointService? checkpoints = null)
+        IAskUserPromptResolver? resolver = null, IAskUserCheckpointService? checkpoints = null,
+        IServiceProvider? services = null)
         : this(store, agents, orchestrator, world, logger, configuration, resolver, checkpoints,
-            Environment.GetEnvironmentVariable, null) { }
+            Environment.GetEnvironmentVariable, null, services) { }
 
     internal HubConnectorService(IConversationStore store, IAgentRegistry agents, IInboundMessageOrchestrator orchestrator,
         IWorldContext world, ILogger<HubConnectorService> logger, IConfiguration? configuration,
         IAskUserPromptResolver? resolver, IAskUserCheckpointService? checkpoints,
-        Func<string, string?> environment, Func<HubConnectorOptions, CancellationToken, Task<WebSocket>>? connect)
+        Func<string, string?> environment, Func<HubConnectorOptions, CancellationToken, Task<WebSocket>>? connect,
+        IServiceProvider? services = null)
     {
         _store = store; _agents = agents; _orchestrator = orchestrator; _world = world; _logger = logger;
-        _configuration = configuration; _resolver = resolver; _checkpoints = checkpoints;
+        _configuration = configuration; _resolver = resolver; _checkpoints = checkpoints; _services = services;
         _environment = environment; _connect = connect ?? ConnectAsync;
     }
 
@@ -55,7 +58,8 @@ public sealed class HubConnectorService : BackgroundService
                 else _logger.LogWarning("Hub connector disabled: invalid configuration.");
                 return;
             }
-            var snapshots = new HubSnapshotBuilder(options, _store, _agents, _world);
+            await using var metrics = HubMetricsCollector.Create(options, _services);
+            var snapshots = new HubSnapshotBuilder(options, _store, _agents, _world, metrics);
             // One processor/cache per service lifetime, not per connection. Never replay a command after reconnect.
             var commands = new HubCommandProcessor(options, _store, _agents, _orchestrator, _world, _resolver, _checkpoints);
             var failures = 0;

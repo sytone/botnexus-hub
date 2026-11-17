@@ -7,7 +7,7 @@ using BotNexus.Gateway.Abstractions.Models;
 namespace BotNexus.Extensions.HubConnector;
 
 internal sealed class HubSnapshotBuilder(HubConnectorOptions options, IConversationStore store, IAgentRegistry agents,
-    IWorldContext world)
+    IWorldContext world, IHubSnapshotMetrics? metrics = null)
 {
     public async Task<HubSnapshot> BuildAsync(CancellationToken ct = default)
     {
@@ -69,6 +69,24 @@ internal sealed class HubSnapshotBuilder(HubConnectorOptions options, IConversat
         var identity = options.IncludeWorldIdentity
             ? new HubWorldIdentity(HubProtocol.Clamp(world.Current.Id, 128), HubProtocol.Clamp(world.Current.Name, 160)) : null;
         var version = typeof(HubSnapshotBuilder).Assembly.GetName().Version?.ToString() ?? "unknown";
-        return new(options.HubId, options.Name, options.BaseUrl, version, observedAt, agentSnapshots, conversations, questions, identity);
+        var snapshot = new HubSnapshot(options.HubId, options.Name, options.BaseUrl, version, observedAt,
+            agentSnapshots, conversations, questions, identity);
+        if (metrics is not null)
+        {
+            try
+            {
+                // Only canonical rows that are in this successful snapshot can authorize metric dimensions
+                // and evidence reads. ActiveSessionId is kept in memory, never added to the wire DTO.
+                var visibleRows = conversations.Select(row => row.Id).Concat(questions.Select(row => row.ConversationId))
+                    .Distinct(StringComparer.Ordinal).Select(id => rows[id]!).ToArray();
+                var visibility = new HubMetricsVisibility(agentSnapshots.Select(agent => agent.Id),
+                    visibleRows.Select(row => new HubMetricsConversation(row.AgentId.Value, row.ConversationId.Value,
+                        row.ActiveSessionId?.Value)), questions.Count);
+                metrics.UpdateVisibility(visibility);
+                snapshot = snapshot with { Metrics = metrics.Take(visibility) };
+            }
+            catch (Exception) { } // Metrics failure cannot turn a valid snapshot into a failed dashboard sync.
+        }
+        return snapshot;
     }
 }

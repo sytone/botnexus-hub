@@ -11,7 +11,8 @@ internal sealed record HubConversation(string Id, string AgentId, string Title, 
     string Status, HubQuestion? PendingQuestion = null);
 internal sealed record HubSnapshot(string WorldId, string Name, string BaseUrl, string Version,
     DateTimeOffset ObservedAt, IReadOnlyList<HubAgent> Agents, IReadOnlyList<HubConversation> Conversations,
-    IReadOnlyList<HubQuestion> Questions, HubWorldIdentity? WorldIdentity = null, bool Truncated = false)
+    IReadOnlyList<HubQuestion> Questions, HubWorldIdentity? WorldIdentity = null, bool Truncated = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] HubMetricsEnvelope? Metrics = null)
 {
     public string Type => "snapshot";
     public int ProtocolVersion => 1;

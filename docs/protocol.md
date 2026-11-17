@@ -1,6 +1,6 @@
 # BotNexusHub protocol
 
-Application version **0.2.1** uses wire protocol **1**. The app is Python/FastAPI with SQLite and a same-origin static UI. The world extension is a .NET 10 hosted service with an outbound WebSocket. Hub accepts only explicit new-conversation, message and prompt-answer commands. No inbound gateway port, gateway admin credential, raw SQL, shell command or platform change is part of this protocol.
+Application version **0.3.0** uses wire protocol **1**. The app is Python/FastAPI with SQLite and a same-origin static UI. The world extension is a .NET 10 hosted service with an outbound WebSocket. Hub accepts only explicit new-conversation, message and prompt-answer commands. No inbound gateway port, gateway admin credential, raw SQL, shell command or platform change is part of this protocol.
 
 Run one Hub backend process. Routing is in memory; extra workers or replicas are not supported. Every externally admitted operator can control all enrolled worlds. Hub is not a multi-tenant identity broker or a replacement for a world's own permissions.
 
@@ -67,7 +67,7 @@ The connector sends an initial snapshot and then normally updates every 15 secon
   "worldId": "test-a",
   "name": "Workshop Alpha",
   "baseUrl": "https://world.example.com",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "observedAt": "2030-01-01T00:00:00Z",
   "agents": [
     {"id": "helper", "name": "Helper", "description": "Example agent"}
@@ -90,6 +90,32 @@ Snapshot strings/arrays and encoded output are capped. Snapshots contain routing
 **Store limitation:** `GetSummariesAsync` and `GetPendingAskUserCheckpointsAsync` in the older gateway contract have no limit/lookback argument. The connector reads those metadata sets before filtering/capping output, and checks relevant conversation metadata by ID. Output caps do not bound initial database work on a large world. It does not query full transcripts or session history. See [connector data limits](connector.md#data-limits-and-privacy).
 
 An omitted question is cleared by a later successful snapshot. A failed store read is not converted into a successful empty snapshot. Hub stores receipt-time `lastSeen` separately from the snapshot's `observedAt`. A connection must supply a snapshot before Hub admits new commands; an offline world's retained snapshot is historical data.
+
+### Optional numeric metrics on a snapshot
+
+A metrics-capable connector can add `metrics` to an otherwise unchanged version-one snapshot. Omission/null means no new metrics batch; it is not a zero-valued sample. Older Hubs ignore this field. Hub does not retain it in the dashboard snapshot or turn every history sample into an activity event.
+
+```json
+{
+  "schemaVersion": 1,
+  "bootId": "00000000-0000-4000-8000-000000000001",
+  "sequence": 1,
+  "observedAt": 1893456000000,
+  "intervalSeconds": 30,
+  "points": [
+    {"metricId": "gateway.memory.rss_bytes", "value": 104857600, "weight": 1},
+    {"metricId": "agent.loops.tools", "value": 2.5, "weight": 4, "agentId": "helper", "conversationId": "c_example"}
+  ]
+}
+```
+
+This object is the value of the `metrics` property, not a standalone WebSocket message. `observedAt` is UTC Unix milliseconds. The boot ID identifies a collector lifetime, and the positive sequence increases for its batches. Hub persists a world-scoped high-water mark to suppress replay across Hub restarts. Completed-run deduplication at the connector is bounded to its own lifetime; it is not a durable exactly-once historical export across gateway restarts.
+
+The envelope is capped at 64 KiB and 512 points. Interval is 15–3600 seconds. Values must be finite, nonnegative JSON numbers no larger than 1e18; percentages cannot exceed 100. Booleans, null and numeric strings are not numbers. Weight is a positive integer no larger than 1,000,000. Only the fixed IDs returned by the catalog are accepted. No labels, arbitrary tags, SQL text, file paths or other fields are stored. IDs are bounded routing IDs. Unknown or invalid optional metrics are discarded without breaking a valid snapshot/command connection; malformed whole-frame JSON and the existing 1 MiB frame bound still apply.
+
+World identity is taken from the authenticated connection, never a metrics-supplied world ID. World counters cannot contain agent/conversation dimensions. Agent counters must match allowed agents and an unambiguous owner in the current normalized visible conversation/question set. Run counters are stored per conversation, not again as duplicate agent totals. An agent-only active-loop zero is allowed when that visible agent has no visible conversations. Hidden, nested, non-user-facing and archived conversations cannot supply metric dimensions. These are connector visibility checks, not per-user operator roles.
+
+Samples older than retention or more than five minutes in the future are rejected. Storage has separate cardinality/boot/row bounds. Default retention is seven days; the row cap can make available history shorter. Maintenance expires old rows even without traffic. Explicit world removal purges that enrollment's metrics/choices; token rotation preserves history. See [metrics](metrics.md) for measurement meanings and limitations.
 
 ### Commands: Hub to world
 
@@ -139,8 +165,23 @@ All routes below except `GET /health` are operator routes behind external preaut
 | `GET /api/activity?worldId=&limit=50&before=` | `{items:[{id,worldId,kind,summary,createdAt,conversationId,agentId}],nextCursor}`. Optional world filter; limit 1–200. Use the positive `nextCursor` as `before` for the next page. |
 | `POST /api/worlds/{worldId}/commands` | `{action,payload}` → 202 command resource. Requires `Idempotency-Key` in addition to the mutation boundary headers. Offline/not-ready, out-of-scope and full-queue requests return 409. |
 | `GET /api/commands/{commandId}` | `{id,status,action,worldId,result,error}`; 404 if unknown. |
+| `GET /api/metrics/catalog` | `{items:[{id,name,unit,scope,aggregation,description}],defaultMetrics}`. Fixed catalog; `scope` is `world` or `agent`; aggregation is `mean` or `sum`. |
+| `GET /api/metrics/settings` | `{retentionDays,maxRows,sampleIntervalSeconds,rowCount,databaseBytes,oldestAt,newestAt,rejectedBatches}`. Interval is the default, not a promise that every world samples at that rate. |
+| `PUT /api/metrics/settings` | Exactly `{retentionDays:7}`; integer 1–365, persisted and immediately pruned on reduction. Returns settings. |
+| `GET /api/metrics/dimensions?worldId=` | `{worlds:[ids],agents:[{worldId,agentId}],conversations:[{worldId,agentId,conversationId}],truncated}` from enrolled retained dimensions. |
+| `GET /api/metrics/query` | Repeated `metricId` (1–6), optional repeated `worldId`, optional exact `agentId`/`conversationId`, UTC millisecond `from`/`to`, and `maxPoints` (16–720, default 240). Response below. |
+| `GET /api/metrics/tiles?worldId=` | Last-hour/60-bucket history: `{from,to,metrics,worlds:{id:{metrics,series}},retentionDays,truncated}`. Default or saved 1–3 world metrics. |
+| `PUT /api/worlds/{worldId}/metrics` | Exactly `{metrics:[ids]}`; 1–3 distinct known world-scope IDs. Returns `{worldId,metrics}`. Shared preference, not a per-user browser setting. |
 
 All operator mutations require the headers described above. A Bearer world token or an old native operator credential does not replace preauthentication or CSRF checks.
+
+### Metrics query response and bounds
+
+`query` returns `{from,to,retentionDays,bucketMs,series,truncated}`. Each series is `{metricId,worldId,agentId,conversationId,points,latestAt,sampleIntervalSeconds}`. Series cadence is the maximum declared interval among its selected samples; legacy sample rows default to 30 seconds. Freshness and chart segmentation use that per-series cadence, not the global default. Each point is `{timestamp,value,count}`, with the bucket-start timestamp and total measured weight. `latestAt` is the latest actual observation, not the bucket's start. `from` is inclusive, `to` exclusive; both must be integer epoch milliseconds and `from < to`. Omitted dates select the retained window. Buckets are aligned to the requested `from`.
+
+Means use `SUM(value * weight) / SUM(weight)`; completed-loop interval counts use `SUM(value)`. There is no implicit cross-world or cross-dimension rollup. An agent/conversation filter never falls back to world counters. Unknown filters return no matching series, not all data. Missing buckets are absent, never zero-filled. At most 64 exact series are returned, with at most `maxPoints` points each. Dimensions lists are bounded to 1,000 each; tiles are bounded to 64 worlds. `truncated: true` means partial output; narrow the filters. Storage allows at most 8,192 series (1,024 per world), 8,192 boot high-water marks (128 per world), and the configured sample row cap. New excessive cardinality is rejected instead of evicting live replay protection.
+
+The metrics database is separate from the registry/commands database, in the same default data volume. A failed metrics database returns a fixed 503 for history operations without logging raw storage errors or disabling ordinary world commands. API availability alone does not mean a given world supports collection.
 
 ## Delivery and idempotency
 
@@ -166,4 +207,4 @@ The connector keeps a bounded command-ID/fingerprint/result cache for its servic
 
 Deep links use the configured portal `baseUrl` plus `/agent/{agentId}/conversation/{conversationId}`, matching the desktop/mobile portal routes at pinned platform commit `04052bbe283ac9106277a841b8d4c60a5c3ce095`. IDs are encoded and unsafe or credential-bearing URL schemes are rejected. The world's own sign-in still applies; no connector token or proxy secret belongs in a portal URL.
 
-The private Hub data volume contains registry data, hashed connector credentials, snapshots, submitted command payloads, receipts/idempotency and capped activity. Messages and answers submitted through Hub are sensitive stored data, even though full transcripts are not copied. Command payloads/receipts have no automatic pruning in this version. Deployment secrets and gateway token files stay outside source control and need a private backup/rotation plan. See [operations](operations.md).
+The private Hub data volume contains registry data, hashed connector credentials, snapshots, submitted command payloads, receipts/idempotency and capped activity. A separate metrics SQLite file in that same volume holds bounded numeric history, routing IDs and shared chart/retention settings. Messages and answers submitted through Hub are sensitive stored data, even though full transcripts are not copied. Command payloads/receipts have no automatic pruning in this version. Deployment secrets and gateway token files stay outside source control and need a private backup/rotation plan. See [operations](operations.md).

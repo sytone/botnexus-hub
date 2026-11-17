@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import asyncio
 import base64
 import hashlib
 import os
@@ -13,6 +14,10 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .metrics import (
+    MetricsStore, MetricsUnavailable, bounded_setting, catalog, database_path,
+    query_arguments,
+)
 from .normalize import command_in_scope, normalize_command
 from .router import Router
 from .security import (
@@ -58,6 +63,10 @@ def create_app(
     command_timeout: float | None = None,
     activity_limit: int | None = None,
     static_dir: str | Path | None = None,
+    metrics_db_path: str | Path | None = None,
+    metrics_retention_days: int | None = None,
+    metrics_max_rows: int | None = None,
+    metrics_maintenance_seconds: float = 60,
 ) -> FastAPI:
     """Use explicit synthetic settings in tests, or HUB_* environment/secret files.
 
@@ -94,13 +103,42 @@ def create_app(
         app.state.allow_insecure_ws = os.getenv("HUB_ALLOW_INSECURE_WS", os.getenv("HUB_ALLOW_INSECURE", "")).lower() in {"1", "true"}
         deadline = _positive_number(command_timeout if command_timeout is not None else os.getenv("HUB_COMMAND_TIMEOUT_SECONDS", "30"), "command timeout", 0.01, 300)
         cap = int(_positive_number(activity_limit if activity_limit is not None else os.getenv("HUB_ACTIVITY_LIMIT", "1000"), "activity limit", 1, 10_000))
-        app.state.store = Store(db_path if db_path is not None else os.getenv("HUB_DB_PATH", os.getenv("HUB_DB", "data/hub.sqlite3")), activity_limit=cap)
-        app.state.router = Router(app.state.store, deadline)
+        hub_path = db_path if db_path is not None else os.getenv("HUB_DB_PATH", os.getenv("HUB_DB", "data/hub.sqlite3"))
+        metrics_path = database_path(hub_path, metrics_db_path if metrics_db_path is not None else os.getenv("HUB_METRICS_DB_PATH"))
+        retention = bounded_setting(metrics_retention_days if metrics_retention_days is not None else os.getenv("HUB_METRICS_RETENTION_DAYS", "7"), 1, 365, "metrics retention")
+        max_rows = bounded_setting(metrics_max_rows if metrics_max_rows is not None else os.getenv("HUB_METRICS_MAX_ROWS", "1000000"), 1, 10_000_000, "metrics row limit")
+        app.state.store = Store(hub_path, activity_limit=cap)
+        app.state.enrollment_lock = asyncio.Lock()
+        app.state.metrics = None
+        stop_metrics, metrics_task = asyncio.Event(), None
         try:
+            try:
+                app.state.metrics = MetricsStore(metrics_path, retention_days=retention, max_rows=max_rows, maintenance_seconds=metrics_maintenance_seconds)
+                with app.state.store.lock:
+                    current = {row["id"]: digest(row["created_at"] + ":" + row["token_hash"]) for row in app.state.store.db.execute("SELECT id,created_at,token_hash FROM worlds")}
+                app.state.metrics.sync_enrollments(current)
+                metrics_task = asyncio.create_task(app.state.metrics.maintain(stop_metrics))
+            except MetricsUnavailable:
+                # History is optional. Do not log paths, payloads or raw errors,
+                # and never make an unavailable metrics DB stop commands.
+                if app.state.metrics is not None:
+                    app.state.metrics.close()
+                app.state.metrics = None
+            app.state.router = Router(app.state.store, deadline, metrics=app.state.metrics)
             yield
         finally:
-            await app.state.router.close()
-            app.state.store.close()
+            try:
+                if hasattr(app.state, "router"):
+                    await app.state.router.close()
+            finally:
+                stop_metrics.set()
+                try:
+                    if metrics_task is not None:
+                        await metrics_task
+                finally:
+                    if app.state.metrics is not None:
+                        app.state.metrics.close()
+                    app.state.store.close()
 
     app = FastAPI(title="BotNexusHub", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
@@ -145,6 +183,10 @@ def create_app(
     async def invalid_input(request, error):
         return _problem(422, str(error))
 
+    @app.exception_handler(MetricsUnavailable)
+    async def metrics_unavailable(request, error):
+        return _problem(503, "Metrics are unavailable")
+
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": app.state.version, "commit": app.state.commit}
@@ -163,6 +205,72 @@ def create_app(
             raise HTTPException(404, "World not found")
         return world
 
+    def metrics_store():
+        if app.state.metrics is None:
+            raise MetricsUnavailable()
+        return app.state.metrics
+
+    def enrollment_key(world_id):
+        with app.state.store.lock:
+            row = app.state.store.db.execute("SELECT created_at,token_hash FROM worlds WHERE id=?", (world_id,)).fetchone()
+        return digest(row["created_at"] + ":" + row["token_hash"]) if row else None
+
+    async def register_metrics(world_id, *, preserve=False):
+        if app.state.metrics is not None:
+            try:
+                await asyncio.to_thread(app.state.metrics.register_world, world_id, enrollment_key(world_id), preserve=preserve)
+            except MetricsUnavailable:
+                # register_world blocks this enrollment before a possible error.
+                pass
+
+    def metrics_world_filter(request):
+        if set(request.query_params) - {"worldId"} or len(request.query_params.getlist("worldId")) > 1:
+            raise InvalidInput("Invalid metrics world filter")
+        value = request.query_params.get("worldId")
+        if value is not None and not WORLD_ID.fullmatch(value):
+            raise InvalidInput("Invalid metrics world filter")
+        return value
+
+    @app.get("/api/metrics/catalog")
+    async def metrics_catalog():
+        return catalog()
+
+    @app.get("/api/metrics/settings")
+    async def metrics_settings():
+        return await asyncio.to_thread(metrics_store().settings)
+
+    @app.put("/api/metrics/settings")
+    async def update_metrics_settings(request: Request):
+        body = await _body(request)
+        if set(body) != {"retentionDays"}:
+            raise InvalidInput("Expected retentionDays")
+        return await asyncio.to_thread(metrics_store().set_retention, body["retentionDays"])
+
+    @app.get("/api/metrics/dimensions")
+    async def metrics_dimensions(request: Request):
+        world_id = metrics_world_filter(request)
+        return await asyncio.to_thread(metrics_store().dimensions, world_id)
+
+    @app.get("/api/metrics/query")
+    async def metrics_query(request: Request):
+        store = metrics_store()
+        arguments = query_arguments(request.query_params, store.clock(), store.retention_days)
+        return await asyncio.to_thread(store.query, **arguments)
+
+    @app.get("/api/metrics/tiles")
+    async def metrics_tiles(request: Request):
+        world_id = metrics_world_filter(request)
+        return await asyncio.to_thread(metrics_store().tiles, world_id)
+
+    @app.put("/api/worlds/{world_id}/metrics")
+    async def update_world_metrics(world_id: str, request: Request):
+        body = await _body(request)
+        if set(body) != {"metrics"}:
+            raise InvalidInput("Expected metrics")
+        async with app.state.enrollment_lock:
+            require_world(world_id)
+            return await asyncio.to_thread(metrics_store().set_tile_metrics, world_id, body["metrics"])
+
     @app.get("/api/worlds")
     async def list_worlds():
         return {"items": [world_resource(world) for world in app.state.store.worlds()]}
@@ -179,17 +287,21 @@ def create_app(
             raise InvalidInput("Invalid world name")
         base_url = validate_base_url(body["baseUrl"])
         token = new_token()
-        if not app.state.store.create_world(world_id, name, base_url, token):
-            raise HTTPException(409, "World already registered")
-        return {**world_resource(require_world(world_id)), "token": token, "connectorToken": token}
+        async with app.state.enrollment_lock:
+            if not app.state.store.create_world(world_id, name, base_url, token):
+                raise HTTPException(409, "World already registered")
+            await register_metrics(world_id)
+            return {**world_resource(require_world(world_id)), "token": token, "connectorToken": token}
 
     @app.post("/api/worlds/{world_id}/rotate-token")
     async def rotate_token(world_id: str):
-        require_world(world_id)
-        token = new_token()
-        app.state.store.rotate_token(world_id, token)
-        await app.state.router.disconnect(world_id, "token_rotated")
-        return {**world_resource(require_world(world_id)), "token": token, "connectorToken": token}
+        async with app.state.enrollment_lock:
+            require_world(world_id)
+            token = new_token()
+            app.state.store.rotate_token(world_id, token)
+            await register_metrics(world_id, preserve=True)
+            await app.state.router.disconnect(world_id, "token_rotated")
+            return {**world_resource(require_world(world_id)), "token": token, "connectorToken": token}
 
     @app.post("/api/worlds/{world_id}/disconnect")
     async def disconnect(world_id: str):
@@ -199,10 +311,18 @@ def create_app(
 
     @app.delete("/api/worlds/{world_id}", status_code=204)
     async def revoke(world_id: str):
-        require_world(world_id)
-        app.state.store.delete_world(world_id)
-        await app.state.router.disconnect(world_id, "world_revoked")
-        return None
+        async with app.state.enrollment_lock:
+            require_world(world_id)
+            if app.state.metrics is not None:
+                try:
+                    await asyncio.to_thread(app.state.metrics.delete_world, world_id)
+                except MetricsUnavailable:
+                    # A failed purge blocks reads until startup reconciliation or
+                    # a successful new-enrollment purge. Never expose old history.
+                    pass
+            app.state.store.delete_world(world_id)
+            await app.state.router.disconnect(world_id, "world_revoked")
+            return None
 
     @app.get("/api/activity")
     async def activity(request: Request):
@@ -263,7 +383,7 @@ def create_app(
         if origin is not None and not same_origin(origin, equivalent_url):
             await websocket.close(code=1008)
             return
-        connection = app.state.router.claim(world_id, websocket)
+        connection = app.state.router.claim(world_id, websocket, enrollment=enrollment_key(world_id))
         if connection is None:
             await websocket.close(code=1008)
             return

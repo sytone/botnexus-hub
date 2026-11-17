@@ -5,12 +5,15 @@ services:
       context: .
       args:
         HUB_COMMIT: ${HUB_COMMIT:-unknown}
-    image: localhost/botnexushub:0.2.1
+    image: localhost/botnexushub:0.3.0
     container_name: botnexushub
     init: true
     restart: unless-stopped
     environment:
       HUB_DB_PATH: /data/hub.sqlite
+      HUB_METRICS_DB_PATH: /data/metrics.sqlite
+      HUB_METRICS_RETENTION_DAYS: ${HUB_METRICS_RETENTION_DAYS:-7}
+      HUB_METRICS_MAX_ROWS: ${HUB_METRICS_MAX_ROWS:-1000000}
       HUB_PUBLIC_URL: ${HUB_PUBLIC_URL:?Set the externally preauthenticated operator origin}
       HUB_CONNECTOR_PUBLIC_URL: ${HUB_CONNECTOR_PUBLIC_URL:?Set the separate connector origin}
     ports:
@@ -91,7 +94,7 @@ services:
       retries: 3
   world-a:
     profiles: [test]
-    image: localhost/botnexushub-test-world:0.2.1
+    image: localhost/botnexushub-test-world:0.3.0
     build:
       context: .
       dockerfile: tests/connected-world.Dockerfile
@@ -124,7 +127,7 @@ services:
       retries: 4
   world-b:
     profiles: [test]
-    image: localhost/botnexushub-test-world:0.2.1
+    image: localhost/botnexushub-test-world:0.3.0
     container_name: botnexushub-world-b
     init: true
     restart: unless-stopped

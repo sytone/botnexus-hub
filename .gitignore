@@ -18,3 +18,4 @@ data/
 *.sqlite*
 .test-tools/
 .test-run-*/
+.build/

@@ -19,7 +19,9 @@
     }());
   </script>
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/metrics.css">
   <script src="/static/theme.js" defer></script>
+  <script src="/static/metrics.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -32,6 +34,7 @@
       </a>
       <div class="header-actions">
         <span id="hub-version" class="muted small" aria-label="Hub version"></span>
+        <button id="metrics-button" class="button button-quiet" type="button" aria-controls="metrics-section" aria-expanded="false" hidden><span class="metrics-nav-mark" aria-hidden="true">⌁</span> Metrics</button>
         <button id="theme-toggle" class="button button-quiet theme-button" type="button" aria-label="Theme: system. Switch to light.">
           <span data-theme-icon aria-hidden="true">◐</span><span data-theme-label>System</span>
         </button>
@@ -106,8 +109,61 @@
         </section>
         <footer class="workspace-footer"><span><span class="status-dot" aria-hidden="true"></span> Outbound-only world connections</span><span>Refreshes every 5 seconds while this tab is visible</span></footer>
       </section>
+      <section id="metrics-section" class="metrics-section" aria-labelledby="metrics-title" hidden>
+        <div class="metrics-hero">
+          <div>
+            <span class="eyebrow">A LITTLE PERSPECTIVE</span>
+            <h1 id="metrics-title" tabindex="-1">Metrics &amp; history</h1>
+            <p class="metrics-hero-copy">See the patterns. Keep every world in context.</p>
+            <span id="metrics-scope" class="metrics-scope"></span>
+          </div>
+          <div class="metrics-hero-actions"><button id="metrics-refresh" class="button button-secondary button-small" type="button">↻ Refresh history</button><button id="metrics-close" class="button button-quiet button-small" type="button">Close history ×</button></div>
+        </div>
+
+        <div class="metrics-controls panel">
+          <form id="metrics-filter-form" autocomplete="off">
+            <div class="metrics-control-heading"><h2>Explore your history</h2><div id="metrics-presets" class="metrics-presets" role="group" aria-label="History time range"><button class="metrics-preset" type="button" data-metrics-range="1h" aria-pressed="false">Last hour</button><button class="metrics-preset" type="button" data-metrics-range="24h" aria-pressed="false">24 hours</button><button class="metrics-preset" type="button" data-metrics-range="7d" aria-pressed="false">7 days</button><button class="metrics-preset" type="button" data-metrics-range="full" aria-pressed="true">Full history</button></div></div>
+            <div class="metrics-filter-grid">
+              <div><label for="metrics-world">World</label><select id="metrics-world" name="worldId"><option value="">All worlds · separate series</option></select></div>
+              <div><label for="metrics-agent">Agent</label><select id="metrics-agent" name="agentId"><option value="">All visible agents</option></select></div>
+              <div><label for="metrics-conversation">Conversation</label><select id="metrics-conversation" name="conversationId"><option value="">All visible conversations</option></select></div>
+            </div>
+            <div class="metrics-dates">
+              <div><label for="metrics-from">From</label><input id="metrics-from" name="from" type="datetime-local" step="1" aria-describedby="metrics-local-time"></div>
+              <div><label for="metrics-to">To</label><input id="metrics-to" name="to" type="datetime-local" step="1" aria-describedby="metrics-local-time"></div>
+              <div class="metrics-filter-actions"><button class="button button-primary" type="submit">Apply dates</button><button id="metrics-clear-filters" class="button button-quiet" type="button">Clear filters</button></div>
+            </div>
+            <p id="metrics-local-time" class="metrics-local-time">Dates use your local time zone. Full history follows the saved retention setting, starting at 7 days by default.</p>
+            <p id="metrics-dimensions-help" class="notice notice-warning metrics-dimensions-help" role="status" hidden></p>
+          </form>
+          <div class="metrics-picker">
+            <div class="metrics-picker-heading"><h2>Selected metrics</h2><span id="metrics-count" class="metrics-count"></span></div>
+            <div id="metrics-selected" class="metrics-selected" role="group" aria-label="Selected metrics; keep between one and six"></div>
+            <div class="metrics-add-row"><div><label for="metrics-add">Add a metric</label><select id="metrics-add"><option value="">Choose a metric to add…</option></select></div><button id="metrics-add-button" class="button button-secondary button-small" type="button" disabled>＋ Add chart</button></div>
+            <p class="metrics-view-help">One metric per chart. Each world, agent and conversation stays a separate series. This view is temporary; card selections are saved with Configure on each world.</p>
+          </div>
+        </div>
+        <p id="metrics-error" class="notice notice-warning metrics-error" role="alert" hidden></p>
+        <div class="metrics-result-heading"><p id="metrics-summary" class="metrics-summary" role="status"></p><p id="metrics-status" class="metrics-status" role="status"></p></div>
+        <p id="metrics-range-help" class="metrics-range-help"></p>
+        <div id="metrics-charts" class="metrics-charts"></div>
+        <details class="metrics-retention panel">
+          <summary>History storage &amp; retention</summary>
+          <p>Shared Hub setting. Save keeps the last 1–365 days across all worlds. Reducing retention removes older samples; increasing it does not restore deleted history. The size limit may remove samples sooner. Changes are sent once, only when you save.</p>
+          <form id="metrics-retention-form" autocomplete="off"><div class="metrics-retention-row"><div class="metrics-retention-field"><label for="metrics-retention">Retention in days</label><input id="metrics-retention" name="retentionDays" type="number" min="1" max="365" step="1" required inputmode="numeric"></div><button id="metrics-retention-save" class="button button-secondary" type="submit">Save retention</button><button id="metrics-retention-check" class="button button-quiet" type="button">Read saved settings</button></div></form>
+          <p id="metrics-retention-feedback" class="metrics-retention-feedback" role="status" hidden></p><p id="metrics-storage"></p>
+        </details>
+      </section>
       <noscript><div class="notice notice-warning">JavaScript is required to use BotNexusHub. Access is managed by your external sign-in service.</div></noscript>
     </main>
+
+    <dialog id="metrics-config-dialog" class="dialog metrics-config-dialog" aria-labelledby="metrics-config-title" aria-describedby="metrics-config-intro">
+      <form id="metrics-config-form" autocomplete="off">
+        <div class="dialog-heading"><div><span class="eyebrow">YOUR WORLD AT A GLANCE</span><h2 id="metrics-config-title">Choose card metrics</h2></div><button id="metrics-config-close" class="icon-button" type="button" aria-label="Close card metrics">×</button></div>
+        <div class="dialog-body"><p id="metrics-config-world" class="metrics-config-world"></p><p id="metrics-config-intro" class="metrics-config-intro">Choose one to three world metrics. This selection is shared by everyone. Charts show the last hour; open a chart for the full history.</p><p id="metrics-config-count" class="metrics-config-count" role="status"></p><div id="metrics-config-choices" class="metrics-config-choices" role="group" aria-label="Shared world card metrics"></div><p id="metrics-config-error" class="notice notice-warning metrics-config-error" role="alert" hidden></p><p id="metrics-config-feedback" class="metrics-config-feedback" role="status" hidden></p></div>
+        <div class="dialog-actions"><button id="metrics-config-cancel" class="button button-secondary" type="button">Close</button><button id="metrics-config-save" class="button button-primary" type="submit" disabled>Save card metrics</button></div>
+      </form>
+    </dialog>
 
     <dialog id="conversation-dialog" class="dialog" aria-labelledby="conversation-dialog-title">
       <form id="conversation-form" autocomplete="off">

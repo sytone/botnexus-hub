@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add numeric-only world metrics in a separate SQLite store. Default retention is seven days, with an explicit settings control, background expiry and bounded ingestion/query sizes. World removal clears that enrollment’s metric history and chart selection.
+- Collect machine/container resources, gateway CPU/memory/I/O/GC/threads/uptime, visible active loops, measured completed-loop duration and tools per loop, and passive SQLite connection/allocator observations when supported. Keep missing data distinct from measured zero; never export SQL text, prompts, tool arguments or file paths as metrics.
+- Add configurable one-to-three metric sparklines on world cards and a full history explorer with metric selection, world/agent/conversation/date-time filters, separate series, readable units and all-world comparisons.
+- Preserve version-one snapshot and command compatibility. Existing connectors still work but need an owner-run extension update and planned gateway restart to supply the new metrics. Hub deployment never updates or restarts a world.
+
 ## 0.2.1
 
 - Correct world, conversation and question handoff links to use the portal address in the latest validated connector snapshot. Keep the enrollment URL as a safe fallback and retain the last snapshot address while offline. Existing 0.2.0 connectors work without a protocol change or rebuild.

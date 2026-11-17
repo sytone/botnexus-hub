@@ -1,11 +1,26 @@
 {
   "id": "botnexus-hub-connector",
   "name": "BotNexusHub World Connector",
-  "description": "Outbound metadata snapshots and three restricted Hub commands.",
-  "version": "0.2.1",
+  "description": "Outbound metadata, numeric metrics and three restricted Hub commands.",
+  "version": "0.3.0",
   "entryAssembly": "BotNexus.Extensions.HubConnector.dll",
   "extensionTypes": ["channel"],
   "configurationScopes": ["gateway"],
   "enabled": true,
-  "configSchema": []
+  "configSchema": [
+    {
+      "id": "metricsEnabled",
+      "type": "bool",
+      "required": false,
+      "default": "true",
+      "description": "Include optional numeric resource and visible-loop metrics in v1 snapshots. Unavailable values are omitted."
+    },
+    {
+      "id": "metricsIntervalSeconds",
+      "type": "integer",
+      "required": false,
+      "default": "30",
+      "description": "Metrics collection and minimum attachment interval, from 15 through 3600 seconds. Independent of snapshotIntervalSeconds."
+    }
+  ]
 }

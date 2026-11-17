@@ -46,7 +46,7 @@ botnexus --target <world-home> extensions list
 botnexus --target <world-home> extensions sync
 ```
 
-For a **tagged release**, replace `main` in `add` or `update` with the exact published tag from the [tags page](https://github.com/sytone/botnexus-hub/tags). No release tags exist yet; version `0.2.1` alone is not a Git tag. A reviewed commit is also accepted when you need a fixed source revision. The Hub ref is separate from the pinned platform compatibility reference above.
+For a **tagged release**, replace `main` in `add` or `update` with the exact published tag from the [tags page](https://github.com/sytone/botnexus-hub/tags). No release tags exist yet; version `0.3.0` alone is not a Git tag. A reviewed commit is also accepted when you need a fixed source revision. The Hub ref is separate from the pinned platform compatibility reference above.
 
 The public Git URL is a source reference, not a Hub service address. No private Git host, local repository path or credential-bearing URL is required.
 
@@ -131,9 +131,17 @@ These settings come from [`HubConnectorOptions.cs`](../src/BotNexus.Extensions.H
 | `maxConversations` | `HUB_MAX_CONVERSATIONS` | `100`; range 1–100. |
 | `maxQuestions` | `HUB_MAX_QUESTIONS` | `100`; range 1–100, independent of the conversation lookback. |
 | `includeWorldIdentity` | `HUB_INCLUDE_WORLD_IDENTITY` | `false`; optionally export the world's own ID/name as additional metadata. |
+| `metricsEnabled` | `HUB_METRICS_ENABLED` | `true`; collect supported numeric counters. |
+| `metricsIntervalSeconds` | `HUB_METRICS_INTERVAL_SECONDS` | `30`; range 15–3600. A slower snapshot interval also limits delivery. |
 | `allowInsecure` | `HUB_ALLOW_INSECURE` | `false`; deliberate isolated development only, never a TLS workaround. |
 
 For each setting, `BOTNEXUSHUB_...` takes precedence over `HUB_...`, then the gateway config property. Environment settings also accept a `_FILE` suffix, and config settings accept a `File` suffix. Set a value **or** its file form, not both. Remove stale higher-priority settings when switching configuration methods. Configuration and secret files are read when the connector starts; changes need a separately planned restart.
+
+## Metrics-capable connector updates
+
+Hub 0.3.0 accepts older connectors without disrupting dashboard snapshots or commands. Metrics need this metrics-capable connector: update the existing source registration and sync it, preserve the current enrollment/token and settings, then plan the world-owner-only gateway restart below. No re-enrollment or new token is needed.
+
+Collection is enabled by default, every 30 seconds; set `metricsEnabled: false` to opt out. History starts when collection starts, not seven days in the past. Optional gateway capabilities and OS counters can be absent, and CPU/I/O rates need a previous sample. See [metrics and history](metrics.md) for precise scope, SQL limits, retention and privacy. No prompt, tool payload or SQL text is collected by metrics.
 
 ## 4. Plan the user-only restart and verify
 

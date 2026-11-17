@@ -78,6 +78,9 @@ Use a clean canonical `main` checkout at the reviewed release commit and a dedic
 | `HUB_CONNECTOR_PUBLIC_URL` | Required separate connector origin. Returned as `/api/me`'s `connectorUrl`. |
 | `HUB_PROXY_SECRET` | Required generated URL-safe shared value, 43–128 characters, used by ingress and the trusted proxy only. |
 | `HUB_COMMIT` | Reviewed source revision reported with `VERSION` by `/health`; do not leave `unknown` as release evidence. |
+| `HUB_METRICS_DB_PATH` | Separate numeric metric store. Compose uses `/data/metrics.sqlite`; never point it at the Hub database. |
+| `HUB_METRICS_RETENTION_DAYS` | Initial retention for a new metrics store, default `7`, range 1–365. Later UI/API saves are persisted in that store. |
+| `HUB_METRICS_MAX_ROWS` | Hard sample-row bound, default `1000000`. Oldest samples can expire before their retention date when the cap is reached. |
 | `NB_MANAGEMENT_URL`, `NB_SETUP_KEY` | Optional NetBird profile settings; not needed by Hub core. |
 
 The backend uses `/data/hub.sqlite` in the Compose data volume. App-level tuning, if needed, must be set in the backend's actual service environment; adding an arbitrary variable to Compose's `.env` does not automatically pass it to a container.
@@ -85,6 +88,14 @@ The backend uses `/data/hub.sqlite` in the Compose data volume. App-level tuning
 The standard Compose procedure is portable and does not require a private deployment wrapper, a personal host path or a pre-existing fleet setup. If you use `scripts/deploy.ps1`, review its supported engine/options and ownership checks in the selected revision. It must operate only on this stack and retain volumes.
 
 For a network-namespace replacement, account for the sharing `ingress` container and optional `netbird` container. Some engines cannot replace the Hub while a sidecar still holds its namespace. Validate this stack's labels and mounts, stop/recreate only its dependent sidecars as needed, and retain every persistent volume. Do not remove unrelated containers or identities. Check both ingress listeners again after any recreation.
+
+## Upgrade for metrics (0.3.0)
+
+The Hub creates a separate metrics database without replacing existing enrollment, token hashes, snapshots or command receipts. Keep the existing data and optional mesh identity volumes. Older connectors remain compatible. They do not gain collection until their owner updates/syncs the extension and plans a gateway restart; deploying Hub never restarts them. Keep the existing world ID, token, connector URL and allowlist.
+
+Retention is seven days when the store is first created. Change it with the explicit Metrics setting; the stored choice survives Hub restarts. A smaller retention value expires old metrics, not world data or Hub commands. A hard sample-row cap can shorten the available history; inspect the earliest available timestamp and row count rather than assuming a full seven days exists. See [metrics operations](metrics.md).
+
+Rollback to 0.2.1 leaves `metrics.sqlite` unused. Preserve it and the data volume; never reset the Hub database to roll back charts. New connectors send metrics as an optional version-one snapshot field that older Hubs ignore.
 
 ## Upgrade from 0.1.0
 
@@ -119,6 +130,7 @@ If that identity is intentionally lost, enroll a new dedicated peer. Never reuse
 | Data | Default storage | Backup treatment |
 | --- | --- | --- |
 | Hub database | `/data/hub.sqlite` in `botnexushub_hub-data` | Include. Registry, token hashes, snapshots, submitted command payloads/receipts and activity. |
+| Metrics database | `/data/metrics.sqlite` in the same `botnexushub_hub-data` volume | Include with the Hub backup. Numeric samples, IDs, retention and per-world chart choices. |
 | Deployment settings | Untracked `.env` and protected external proxy settings | Include in a private settings backup or maintain a documented secure recreation plan. Never publish. |
 | World connector token files | Chosen by each world owner | Protect and back up under that world's policy, or plan explicit per-world rotation. Hub cannot recover plaintext tokens. |
 | Optional mesh identity | `/var/lib/netbird` in `botnexushub_netbird-state` | Back up privately or record an intentional re-enrollment plan. Do not delete routinely. |
@@ -126,7 +138,7 @@ If that identity is intentionally lost, enroll a new dedicated peer. Never reuse
 
 Names above are Compose defaults, not instructions to operate on an existing container by name alone. Confirm project labels, mounts and ownership before backup, restore or replacement.
 
-SQLite uses WAL mode. Use a consistent SQLite backup method, or stop only this Hub before copying its full data directory. Copying an active database file alone can miss WAL data. Verify a restore in a separate disposable environment.
+Both SQLite stores use WAL mode. Back up **both** `hub.sqlite` and `metrics.sqlite` consistently, or stop only this Hub before copying its full data directory. Copying an active database file alone can miss WAL data. Verify a restore in a separate disposable environment.
 
 Snapshots contain conversation titles and question text/choices. Command storage also contains submitted messages and answers. These are sensitive even though Hub does not copy full transcripts. Activity is capped, but command receipts/payloads do not have automatic pruning in this version; plan for storage growth and private retention.
 
@@ -142,7 +154,7 @@ A completed question disappears after a later successful snapshot. A failed stor
 
 World links in Hub 0.2.1 prefer the latest validated connector snapshot's `baseUrl`. Enrollment `baseUrl` remains the fallback before a snapshot. A world owner can correct `worldBaseUrl` in its complete connector configuration and restart that gateway; existing 0.2.0 connectors already publish it. No enrollment deletion, token rotation or database edit is needed. The last received snapshot address remains available offline, clearly marked as historical data.
 
-**Remove world** requires the exact ID before sending one enrollment-only DELETE. It revokes that token and disconnects its socket. It does not uninstall the extension or delete the world's data. Hub retains command receipts and bounded activity history. A running connector may retry its now-invalid credential, but has no self-enrollment permission. To reconnect, explicitly add it again, save the new token into its protected token file, and have the world owner restart its gateway. Disable the connector in the world and plan its restart if retries must stop. Offline worlds do not expire; temporary outages must not remove enrollments.
+**Remove world** requires the exact ID before sending one enrollment-only DELETE. It revokes that token and disconnects its socket. It does not uninstall the extension or delete the world's data. Hub retains command receipts and bounded activity history. It deletes the removed enrollment’s metric samples and chart choices, so a later enrollment with the same ID cannot inherit that history. A running connector may retry its now-invalid credential, but has no self-enrollment permission. To reconnect, explicitly add it again, save the new token into its protected token file, and have the world owner restart its gateway. Disable the connector in the world and plan its restart if retries must stop. Offline worlds do not expire; temporary outages must not remove enrollments.
 
 A failed/ambiguous removal is not reported as success or automatically retried. Refresh the world list to resolve the current state before deciding on another explicit action. Do not remove and re-add a world merely to correct its portal address.
 

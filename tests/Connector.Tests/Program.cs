@@ -44,7 +44,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("binary frames are rejected and close is handled", BinaryFrame),
     ("concurrent sends never interleave frames", SendLock),
     ("receive and send honor cancellation", TransportCancellation),
-};
+}.Concat(MetricsTests.All()).ToArray();
 var failures = 0;
 foreach (var test in tests)
 {

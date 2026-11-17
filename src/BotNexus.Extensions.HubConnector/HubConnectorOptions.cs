@@ -18,6 +18,8 @@ internal sealed class HubConnectorOptions
     public int MaxConversations { get; init; } = 100;
     public int MaxQuestions { get; init; } = 100;
     public bool IncludeWorldIdentity { get; init; }
+    public bool MetricsEnabled { get; init; } = true;
+    public TimeSpan MetricsInterval { get; init; } = TimeSpan.FromSeconds(30);
     public override string ToString() => "HubConnectorOptions [redacted]";
 }
 
@@ -99,7 +101,9 @@ internal static class HubConnectorConfigurationReader
                 ActivityLookback = TimeSpan.FromDays(Number("ACTIVITY_LOOKBACK_DAYS", "activityLookbackDays", 7, 1, 365)),
                 MaxConversations = Number("MAX_CONVERSATIONS", "maxConversations", 100, 1, 100),
                 MaxQuestions = Number("MAX_QUESTIONS", "maxQuestions", 100, 1, 100),
-                IncludeWorldIdentity = Flag("INCLUDE_WORLD_IDENTITY", "includeWorldIdentity", false)
+                IncludeWorldIdentity = Flag("INCLUDE_WORLD_IDENTITY", "includeWorldIdentity", false),
+                MetricsEnabled = Flag("METRICS_ENABLED", "metricsEnabled", true),
+                MetricsInterval = TimeSpan.FromSeconds(Number("METRICS_INTERVAL_SECONDS", "metricsIntervalSeconds", 30, 15, 3600))
             }, "enabled");
         }
         catch (Exception)

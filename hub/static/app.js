@@ -231,10 +231,13 @@
   const accessDeniedMessage = 'Your external access or session could not be verified. Reload secure access to continue. Check the world before repeating an action; actions are never retried automatically.';
   const accessUnverifiedMessage = 'The Hub could not be reached, or secure access could not be verified. Check your connection, then reload secure access. Check the world before repeating an action; actions are never retried automatically.';
 
-  async function api(path, method = 'GET', body, key) {
+  async function api(path, method = 'GET', body, key, context = {}) {
     const epoch = state.epoch;
     const options = buildRequestOptions(method, body, key);
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (context.signal?.aborted) cancel();
+    else context.signal?.addEventListener('abort', cancel, { once: true });
     const isRead = method === 'GET';
     if (isRead) state.readControllers.add(controller);
     let timedOut = false;
@@ -268,9 +271,12 @@
       throw new ApiError('No response was received from the Hub. Check your connection. An action may have an unknown outcome; it was not resent.', 0, 'network');
     } finally {
       window.clearTimeout(timeout);
+      context.signal?.removeEventListener('abort', cancel);
       state.readControllers.delete(controller);
     }
   }
+
+  const metricCharts = window.__hub.metrics?.attach({ api, getWorlds: () => state.worlds, isActive: () => state.authenticated }) || null;
 
   function stopPolling() {
     window.clearInterval(state.refreshTimer);
@@ -312,6 +318,7 @@
     state.authenticated = false;
     state.connectorUrl = '';
     state.epoch += 1;
+    metricCharts?.clear();
     stopPolling();
     for (const controller of state.readControllers) controller.abort();
     state.worlds = [];
@@ -463,6 +470,7 @@
     byId('stat-questions').textContent = String(collectQuestions(state.worlds).length);
     ui.newConversation.disabled = !state.worlds.some((world) => world.connected && world.agents.length);
     renderWorlds();
+    void metricCharts?.update();
     renderConversations();
     renderQuestions();
     renderActivity();
@@ -526,7 +534,9 @@
       remove.disabled = state.removing;
       remove.addEventListener('click', () => openRemoval(world.id));
       footer.append(remove);
-      card.append(top, metrics, freshness, footer);
+      card.append(top, metrics);
+      if (metricCharts) card.append(metricCharts.tile(world));
+      card.append(freshness, footer);
       return card;
     }));
   }
@@ -1176,7 +1186,7 @@
       void pollCommands();
     }
   });
-  window.addEventListener('pagehide', () => { stopPolling(); clearEnrollment(); });
+  window.addEventListener('pagehide', () => { stopPolling(); clearEnrollment(); metricCharts?.clear(); });
   window.addEventListener('pageshow', (event) => {
     if (event.persisted && state.authenticated) { startPolling(); void refreshDashboard(); void pollCommands(); }
   });

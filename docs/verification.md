@@ -1,6 +1,6 @@
 # Release verification checklist
 
-This is the gate checklist for application version **0.2.1**, not a report of passed runs. It does not certify a deployment as secure or production-ready. Record actual commands, exit codes and results against the exact reviewed source revision and `VERSION`. Do not copy counts or deployment claims from an earlier release.
+This is the gate checklist for application version **0.3.0**, not a report of passed runs. It does not certify a deployment as secure or production-ready. Record actual commands, exit codes and results against the exact reviewed source revision and `VERSION`. Do not copy counts or deployment claims from an earlier release.
 
 All app changes require Python tests, Node UI/theme tests, connector build/tests and isolated container/browser E2E before release. Recovery and ingress/access-policy checks below are separate gates, not substitutes for unit tests.
 
@@ -20,7 +20,7 @@ Use an isolated Python environment, Node.js, Git and the .NET 10 SDK:
 ```text
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
-node --test tests/theme.test.cjs tests/ui-source.test.cjs
+node --test tests/*.test.cjs
 dotnet build src/BotNexus.Extensions.HubConnector/BotNexus.Extensions.HubConnector.csproj -c Release -p:BotNexusRepoRoot=/isolated/botnexus
 dotnet run --project tests/Connector.Tests/Connector.Tests.csproj -c Release -p:BotNexusBinaryDir=/matching/gateway
 git diff --check
@@ -142,6 +142,17 @@ Pass `--hub-container`, `--ingress-container`, `--world-container`, `--world-b-b
 - [ ] Both worlds reconnect through the connector ingress after recovery. Recheck the namespace-sharing ingress if the engine requires recreation.
 - [ ] A consistent backup restores in a separate disposable environment; no configured Hub volume is deleted as a test shortcut.
 - [ ] If the optional NetBird profile is included, use a dedicated test identity and configured management URL. Verify reconnect without an enrollment key and retention of that identity across sidecar recreation. Do not claim this gate for deployments that did not run it.
+
+## Metrics gates
+
+- [ ] Optional metrics snapshots preserve old-connector and old-Hub compatibility; command routing still works.
+- [ ] Numeric-only fixed catalog, agent/conversation visibility, world authentication, finite values, timestamp skew, duplicate batch, malformed payload and capacity limits pass. Missing data is not zero.
+- [ ] Weighted tools-per-loop means include zero-tool measured runs and exclude unknown counts. Repeated terminal observations do not inflate counts.
+- [ ] Retention defaults to seven days, settings survive restart, expiry works without traffic, query time bounds apply, and a hard row cap is visible as an additional bound.
+- [ ] Numeric history and choices survive Hub recreation. Existing enrollment/token hashes and command receipts are unchanged. Removing a synthetic world purges only its metric history; ID reuse does not restore it.
+- [ ] Real synthetic connectors in two disposable gateway containers supply process/machine metrics, passive SQLite counters and payload-free run observations. CPU/I/O warmup, unsupported sources and collection failures are honest.
+- [ ] Browser: configure one/three tile graphs; open full history; all-world and exact agent/conversation/time filters; add/remove metrics; retention save; zero/missing/gaps; stale data; dark/light/system; desktop/mobile; keyboard labels; access loss clears private charts and no mutation auto-retries.
+- [ ] Database byte/row diagnostics and bounded/downsampled query responses are checked against representative history, not only an empty fixture.
 
 ## Public source-only release gate
 

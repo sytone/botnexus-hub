@@ -123,10 +123,18 @@ internal static class HubProtocol
             || conversations.Count != snapshot.Conversations.Count || questions.Count != snapshot.Questions.Count;
         while (true)
         {
-            var bytes = Serialize(snapshot with
+            var visible = snapshot with
             {
                 Agents = agents, Conversations = conversations, Questions = questions, Truncated = truncated
-            });
+            };
+            // Frame trimming may remove a conversation after collection. Do not retain orphan dimensions
+            // (or a headline count for removed active loops) in the final, authenticated snapshot.
+            if (visible.Metrics is { } metrics)
+            {
+                try { visible = visible with { Metrics = HubMetricsWire.Bound(metrics, HubMetricsVisibility.FromSnapshot(visible)) }; }
+                catch (Exception) { visible = visible with { Metrics = null }; }
+            }
+            var bytes = Serialize(visible);
             if (bytes.Length <= MaxFrameBytes) return bytes;
             truncated = true;
             // Questions may reference old conversations outside the recent list, but never a removed agent.
